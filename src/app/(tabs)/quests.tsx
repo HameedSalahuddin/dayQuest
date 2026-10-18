@@ -25,7 +25,12 @@ export default function QuestsScreen() {
   const refresh = useCallback(async () => {
     try { setTasks(await listTasks(db)); } catch { setError('Could not load your quests. Please try again.'); }
   }, [db]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    listTasks(db).then(rows => { if (active) setTasks(rows); })
+      .catch(() => { if (active) setError('Could not load your quests. Please try again.'); });
+    return () => { active = false; };
+  }, [db]);
 
   const openForm = (task?: Task) => {
     setEditingId(task?.id);

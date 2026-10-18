@@ -23,7 +23,13 @@ export default function ScheduleScreen() {
   const [title, setTitle] = useState(''); const [subject, setSubject] = useState(''); const [location, setLocation] = useState('');
   const [weekday, setWeekday] = useState(new Date().getDay()); const [start, setStart] = useState('09:00'); const [end, setEnd] = useState('10:00'); const [kind, setKind] = useState<EventType>('class'); const [error, setError] = useState('');
   const refresh = useCallback(async () => { try { setEntries(await db.getAllAsync<ScheduleEntry>('SELECT * FROM schedule_entries ORDER BY weekday, start_minute')); } catch { setError('Could not load your schedule.'); } }, [db]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    db.getAllAsync<ScheduleEntry>('SELECT * FROM schedule_entries ORDER BY weekday, start_minute')
+      .then(rows => { if (active) setEntries(rows); })
+      .catch(() => { if (active) setError('Could not load your schedule.'); });
+    return () => { active = false; };
+  }, [db]);
   const openEditor = (entry?: ScheduleEntry) => { setEditId(entry?.id); setTitle(entry?.title ?? ''); setSubject(entry?.subject ?? ''); setLocation(entry?.location ?? ''); setWeekday(entry?.weekday ?? selectedDay); setStart(entry ? showTime(entry.start_minute) : '09:00'); setEnd(entry ? showTime(entry.end_minute % 1440) : '10:00'); setKind(entry?.event_type ?? 'class'); setError(''); setModal(true); };
   const save = async () => {
     const startMinute = toMinutes(start), endMinute = toMinutes(end);

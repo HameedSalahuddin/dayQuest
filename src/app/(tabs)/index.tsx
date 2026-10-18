@@ -34,7 +34,16 @@ export default function TodayScreen() {
       setTasks(taskRows); setClasses(events); setLoadError('');
     } catch { setLoadError('Could not load today’s plan.'); }
   }, [db, now]);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      listTasks(db),
+      db.getAllAsync<ClassRow>('SELECT * FROM schedule_entries WHERE weekday=? ORDER BY start_minute', now.getDay()),
+    ]).then(([taskRows, events]) => {
+      if (active) { setTasks(taskRows); setClasses(events); setLoadError(''); }
+    }).catch(() => { if (active) setLoadError('Could not load today’s plan.'); });
+    return () => { active = false; };
+  }, [db, now]);
   const slots = useMemo(() => getFreeSlots(classes, now), [classes, now]);
   const recommendations = useMemo(() => recommendTasks(tasks, slots, today), [tasks, slots, today]);
   const dueTodayOrLate = tasks.filter(task => task.status === 'open' && task.due_date && task.due_date <= today);
