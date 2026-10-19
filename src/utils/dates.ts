@@ -16,6 +16,24 @@ export function weekdayForDateKey(value: string): number | null {
   return new Date(year, month - 1, day).getDay();
 }
 
+export function dateFromDateKey(value: string): Date | null {
+  if (!isValidDateKey(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+export function dateFromTimeKey(value: string | null): Date | null {
+  if (!value || !isValidTimeKey(value)) return null;
+  const [hour, minute] = value.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date;
+}
+
+export function timeKeyFromDate(date: Date): string {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 export function dateKeyOffset(value: string, offset: number): string {
   if (!isValidDateKey(value)) return value;
   const [year, month, day] = value.split('-').map(Number);

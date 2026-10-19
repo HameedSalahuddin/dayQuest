@@ -6,8 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borders, radii } from '../../theme/tokens';
 import PixelCard from '../../components/ui/PixelCard';
 import EmptyState from '../../components/ui/EmptyState';
-import { addScheduleException, deleteScheduleException, hasScheduleOverlap, listScheduleEntries, listScheduleExceptions, type ScheduleEntry, type ScheduleException } from '../../features/schedule/repository';
-import { dateKeyOffset, isValidDateKey, localDateKey, parseTimeRange, weekdayForDateKey } from '../../utils/dates';
+import DateTimeField from '../../components/ui/DateTimeField';
+import { addScheduleException, deleteScheduleException, getEventsForDate, hasScheduleOverlap, listScheduleEntries, listScheduleExceptions, type ScheduleEntry, type ScheduleException } from '../../features/schedule/repository';
+import { dateFromDateKey, dateFromTimeKey, dateKeyOffset, isValidDateKey, localDateKey, parseTimeRange, timeKeyFromDate, weekdayForDateKey } from '../../utils/dates';
 
 type EventType = 'class' | 'commitment';
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -26,6 +27,9 @@ export default function ScheduleScreen() {
   const [exceptionDate, setExceptionDate] = useState(() => localDateKey(new Date()));
   const [exceptions, setExceptions] = useState<ScheduleException[]>([]);
   const [oneOffTitle, setOneOffTitle] = useState(''); const [oneOffStart, setOneOffStart] = useState('09:00'); const [oneOffEnd, setOneOffEnd] = useState('10:00');
+  const [changeEntry, setChangeEntry] = useState<ScheduleEntry | null>(null);
+  const [changeStart, setChangeStart] = useState('09:00'); const [changeEnd, setChangeEnd] = useState('10:00');
+  const [changeError, setChangeError] = useState('');
   const refresh = useCallback(async () => { try { setEntries(await listScheduleEntries(db)); } catch { setError('Could not load your schedule.'); } }, [db]);
   const refreshExceptions = useCallback(async () => {
     if (!isValidDateKey(exceptionDate)) { setExceptions([]); return; }
@@ -110,6 +114,39 @@ export default function ScheduleScreen() {
       setError(''); await refreshExceptions();
     } catch { setError('Could not cancel this event for the selected date.'); }
   };
+  const openDateChange = (entry: ScheduleEntry) => {
+    const exception = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
+    setChangeEntry(entry);
+    setChangeStart(showTime(exception?.start_minute ?? entry.start_minute));
+    setChangeEnd(showTime((exception?.end_minute ?? entry.end_minute) % 1440));
+    setChangeError('');
+  };
+  const saveDateChange = async () => {
+    if (!changeEntry || !isValidDateKey(exceptionDate) || weekdayForDateKey(exceptionDate) !== changeEntry.weekday) {
+      setChangeError('Choose a date that matches this event’s weekday.'); return;
+    }
+    const range = parseTimeRange(changeStart, changeEnd);
+    if (!range) { setChangeError('Choose a valid start and end time.'); return; }
+    try {
+      const [dateEvents, nextDateEvents] = await Promise.all([
+        getEventsForDate(db, exceptionDate),
+        range.end > 1440 ? getEventsForDate(db, dateKeyOffset(exceptionDate, 1)) : Promise.resolve([]),
+      ]);
+      const targetKey = `weekly-${changeEntry.id}`;
+      const collision = dateEvents.some(event => event.key !== targetKey && range.start < event.end_minute && range.end > event.start_minute) ||
+        (range.end > 1440 && nextDateEvents.some(event => event.key !== `${targetKey}-carry` && event.start_minute < range.end - 1440 && event.end_minute > 0));
+      if (collision) { setChangeError('This change overlaps another event on that date.'); return; }
+      await db.runAsync('DELETE FROM schedule_exceptions WHERE date=? AND entry_id=? AND exception_type IN (?, ?)', exceptionDate, changeEntry.id, 'modified', 'cancelled');
+      await addScheduleException(db, { date: exceptionDate, entry_id: changeEntry.id, exception_type: 'modified', title: changeEntry.title, start_minute: range.start, end_minute: range.end, notes: null });
+      setChangeEntry(null); setError(''); await refreshExceptions();
+    } catch { setChangeError('Could not save this date-specific change.'); }
+  };
+  const restoreWeeklyTime = async (entry: ScheduleEntry) => {
+    const exception = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
+    if (!exception) return;
+    try { await deleteScheduleException(db, exception.id); await refreshExceptions(); setError(''); }
+    catch { setError('Could not restore the weekly event time.'); }
+  };
   const remove = (entry: ScheduleEntry) => Alert.alert('Delete event?', `Remove “${entry.title}” from your weekly schedule?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM schedule_entries WHERE id=?', entry.id); await refresh(); } }]);
   const visible = entries.filter(e => e.weekday === selectedDay);
   const dateWeekday = weekdayForDateKey(exceptionDate);
@@ -122,10 +159,10 @@ export default function ScheduleScreen() {
       <PixelCard style={styles.datePanel}>
         <Text style={styles.panelTitle}>One-off changes</Text>
         <Text style={styles.eventMeta}>Set a holiday, cancel a weekly event, or add an event for one date.</Text>
-        <Field label="DATE (YYYY-MM-DD)" value={exceptionDate} onChangeText={value => { setExceptionDate(value); if (!isValidDateKey(value)) setExceptions([]); const day = weekdayForDateKey(value); if (day !== null) setSelectedDay(day); }} placeholder="2026-10-30" />
+        <DateTimeField label="DATE" mode="date" value={dateFromDateKey(exceptionDate)} onChange={date => { const value = localDateKey(date); setExceptionDate(value); const day = weekdayForDateKey(value); if (day !== null) setSelectedDay(day); }} />
         {dateWeekday !== null ? <Text style={styles.eventMeta}>{fullDays[dateWeekday]}</Text> : <Text style={styles.error}>Enter a real date (YYYY-MM-DD).</Text>}
         <Field label="ONE-OFF EVENT NAME" value={oneOffTitle} onChangeText={setOneOffTitle} placeholder="e.g. Study group" />
-        <View style={styles.row}><Field label="START" value={oneOffStart} onChangeText={setOneOffStart} placeholder="09:00"/><Field label="END" value={oneOffEnd} onChangeText={setOneOffEnd} placeholder="10:00"/></View>
+        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(oneOffStart)} onChange={date => setOneOffStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(oneOffEnd)} onChange={date => setOneOffEnd(timeKeyFromDate(date))}/></View>
         <View style={styles.actions}><Pressable style={styles.smallAction} onPress={() => void addOneOff()}><Text style={styles.smallActionText}>Add one-off event</Text></Pressable><Pressable style={styles.smallAction} onPress={() => void addHoliday()}><Text style={styles.smallActionText}>Mark holiday</Text></Pressable></View>
         {exceptions.map(item => <View key={item.id} style={styles.exceptionRow}>
           <Text style={styles.eventMeta}>{item.exception_type === 'holiday' ? 'Holiday · weekly events hidden' : item.exception_type === 'cancelled' ? `Cancelled · ${entries.find(entry => entry.id === item.entry_id)?.title ?? 'weekly event'}` : `${item.title} · ${showTime(item.start_minute ?? 0)}–${showTime(item.end_minute ?? 0)}${(item.end_minute ?? 0) > 1440 ? ' +1d' : ''}`}</Text>
@@ -136,12 +173,20 @@ export default function ScheduleScreen() {
       <Text style={styles.panelTitle}>Weekly · {fullDays[selectedDay]}</Text>
       {visible.length === 0 ? <EmptyState icon="calendar-outline" title="A clear day" subtitle={`No classes or commitments on ${fullDays[selectedDay]}. Add an event to build your weekly rhythm.`} /> : visible.map(entry => {
         const cancelled = exceptions.some(item => item.exception_type === 'cancelled' && item.entry_id === entry.id);
+        const modification = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
+        const modified = modification !== undefined;
+        const displayStart = modification?.start_minute ?? entry.start_minute;
+        const displayEnd = modification?.end_minute ?? entry.end_minute;
         return <PixelCard key={entry.id} accentLeft style={styles.event}>
           <Pressable style={styles.eventPress} onPress={() => openEditor(entry)} onLongPress={() => remove(entry)}>
-            <View style={styles.time}><Text style={styles.timeText}>{showTime(entry.start_minute)}</Text><View style={styles.timeLine} /><Text style={styles.timeText}>{showTime(entry.end_minute % 1440)}{entry.end_minute > 1440 ? ' +1d' : ''}</Text></View>
-            <View style={styles.eventInfo}><Text style={styles.eventName}>{entry.title}</Text><Text style={styles.eventMeta}>{[entry.subject, entry.location, entry.event_type].filter(Boolean).join(' · ')}</Text></View><Ionicons name="create-outline" size={18} color={colors.textDisabled} />
+            <View style={styles.time}><Text style={styles.timeText}>{showTime(displayStart)}</Text><View style={styles.timeLine} /><Text style={styles.timeText}>{showTime(displayEnd % 1440)}{displayEnd > 1440 ? ' +1d' : ''}</Text></View>
+            <View style={styles.eventInfo}><Text style={styles.eventName}>{entry.title}{modified ? ' · changed' : ''}</Text><Text style={styles.eventMeta}>{[entry.subject, entry.location, entry.event_type].filter(Boolean).join(' · ')}</Text></View><Ionicons name="create-outline" size={18} color={colors.textDisabled} />
           </Pressable>
-          {dateWeekday === selectedDay ? <Pressable style={styles.cancelEvent} onPress={() => cancelled ? undefined : void cancelForDate(entry)}><Text style={styles.cancelEventText}>{cancelled ? 'Cancelled for date' : `Cancel on ${exceptionDate}`}</Text></Pressable> : null}
+          {dateWeekday === selectedDay ? <View style={styles.actions}>
+            {cancelled ? <Text style={styles.cancelEventText}>Cancelled for date</Text> : <Pressable style={styles.cancelEvent} onPress={() => void cancelForDate(entry)}><Text style={styles.cancelEventText}>{`Cancel on ${exceptionDate}`}</Text></Pressable>}
+            {!cancelled ? <Pressable style={styles.cancelEvent} onPress={() => openDateChange(entry)}><Text style={styles.smallActionText}>{modified ? 'Edit date change' : 'Change for this date'}</Text></Pressable> : null}
+            {modified ? <Pressable style={styles.cancelEvent} onPress={() => void restoreWeeklyTime(entry)}><Text style={styles.smallActionText}>Restore weekly time</Text></Pressable> : null}
+          </View> : null}
         </PixelCard>;
       })}
       <Text style={styles.hint}>Tap an event to edit · press and hold to delete</Text>
@@ -153,9 +198,17 @@ export default function ScheduleScreen() {
         <Field label="SUBJECT / TYPE" value={subject} onChangeText={setSubject} placeholder="e.g. Physics, gym, sleep" />
         <Field label="LOCATION" value={location} onChangeText={setLocation} placeholder="e.g. Lab 2" />
         <Text style={styles.label}>REPEATS ON</Text><View style={styles.days}>{days.map((d, i) => <Pressable key={d} onPress={() => setWeekday(i)} style={[styles.day, weekday === i && styles.dayActive]}><Text style={[styles.dayText, weekday === i && styles.dayTextActive]}>{d}</Text></Pressable>)}</View>
-        <View style={styles.row}><Field label="START (24 HOUR)" value={start} onChangeText={setStart} placeholder="09:00"/><Field label="END (24 HOUR)" value={end} onChangeText={setEnd} placeholder="10:00"/></View>
+        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(start)} onChange={date => setStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(end)} onChange={date => setEnd(timeKeyFromDate(date))}/></View>
         <Text style={styles.label}>EVENT KIND</Text><View style={styles.days}>{(['class', 'commitment'] as EventType[]).map(k => <Pressable key={k} onPress={() => setKind(k)} style={[styles.kind, kind === k && styles.dayActive]}><Text style={[styles.dayText, kind === k && styles.dayTextActive]}>{k === 'class' ? 'Class / lab' : 'Personal commitment'}</Text></Pressable>)}</View>
         {error ? <Text style={styles.error}>{error}</Text> : null}<Pressable style={styles.save} onPress={() => void save()}><Text style={styles.saveText}>{editId ? 'Save Changes' : 'Add to Schedule'}</Text></Pressable>
+      </ScrollView>
+    </SafeAreaView></Modal>
+    <Modal visible={changeEntry !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setChangeEntry(null)}><SafeAreaView style={styles.modal}>
+      <View style={styles.modalHeader}><Text style={styles.modalTitle}>Change for {exceptionDate}</Text><Pressable onPress={() => setChangeEntry(null)}><Text style={styles.cancel}>Cancel</Text></Pressable></View>
+      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+        <Text style={styles.eventMeta}>{changeEntry?.title} · only this occurrence changes</Text>
+        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(changeStart)} onChange={date => setChangeStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(changeEnd)} onChange={date => setChangeEnd(timeKeyFromDate(date))}/></View>
+        {changeError ? <Text style={styles.error}>{changeError}</Text> : null}<Pressable style={styles.save} onPress={() => void saveDateChange()}><Text style={styles.saveText}>Save for this date</Text></Pressable>
       </ScrollView>
     </SafeAreaView></Modal>
   </SafeAreaView>;

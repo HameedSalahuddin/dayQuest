@@ -1,7 +1,8 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors, typography, borders } from '../../theme/tokens';
+import { useAuth } from '../../features/auth/AuthProvider';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -24,6 +25,9 @@ function TabIcon({ name, focused, color, size }: TabIconProps) {
  * Tab navigator — four bottom tabs with pixel-art-styled tab bar.
  */
 export default function TabsLayout() {
+  const { session, loading } = useAuth();
+  if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgPrimary }}><ActivityIndicator color={colors.accentPrimary} /></View>;
+  if (!session) return <Redirect href="/onboarding" />;
   return (
     <Tabs
       screenOptions={{

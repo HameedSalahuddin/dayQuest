@@ -15,11 +15,14 @@ import type { Task } from '../../features/tasks/types';
 import { formatMinute, getFreeSlots, recommendTasks } from '../../features/planner/recommendations';
 import { classifyDeadline, localDateKey } from '../../utils/dates';
 import { getEventsForDate, type DatedEvent } from '../../features/schedule/repository';
+import { useAuth } from '../../features/auth/AuthProvider';
 
 const greeting = (hour: number) => hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : hour < 21 ? 'Good evening' : 'Night owl mode';
 
 export default function TodayScreen() {
   const db = useSQLiteContext();
+  const { user } = useAuth();
+  const heroName = typeof user?.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : 'Hero';
   const [tasks, setTasks] = useState<Task[]>([]);
   const [classes, setClasses] = useState<DatedEvent[]>([]);
   const [loadError, setLoadError] = useState('');
@@ -58,7 +61,7 @@ export default function TodayScreen() {
   const dateLabel = now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
   return <SafeAreaView style={styles.safe} edges={['top']}><ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-    <View style={styles.header}><View><Text style={styles.greeting}>{greeting(now.getHours())}, Hero!</Text><Text style={styles.date}>{dateLabel}</Text></View><View style={styles.xp}><Ionicons name="star" size={13} color={colors.warning}/><Text style={styles.xpText}>0 XP</Text></View></View>
+    <View style={styles.header}><View><Text style={styles.greeting}>{greeting(now.getHours())}, {heroName}!</Text><Text style={styles.date}>{dateLabel}</Text></View><View style={styles.xp}><Ionicons name="star" size={13} color={colors.warning}/><Text style={styles.xpText}>0 XP</Text></View></View>
     {loadError ? <Text style={styles.error}>{loadError}</Text> : null}
     <View style={styles.section}><SectionHeader title="Today's Overview"/><PixelCard style={styles.overview}>
       <ProgressBar progress={dueCount ? doneCount / dueCount : 0} label="Today's quests completed" showPercent />

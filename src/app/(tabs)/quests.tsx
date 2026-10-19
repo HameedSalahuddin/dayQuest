@@ -9,7 +9,8 @@ import PixelBadge from '../../components/ui/PixelBadge';
 import EmptyState from '../../components/ui/EmptyState';
 import { deleteTask, listTasks, saveTask, setTaskCompleted } from '../../features/tasks/repository';
 import type { Task, TaskCategory, TaskInput, TaskPriority } from '../../features/tasks/types';
-import { classifyDeadline, isValidDateKey, isValidTimeKey, localDateKey } from '../../utils/dates';
+import DateTimeField from '../../components/ui/DateTimeField';
+import { classifyDeadline, dateFromDateKey, dateFromTimeKey, isValidDateKey, isValidTimeKey, localDateKey, timeKeyFromDate } from '../../utils/dates';
 
 const categories: TaskCategory[] = ['assignment', 'lab', 'exam', 'revision', 'project', 'personal'];
 const priorities: TaskPriority[] = ['low', 'medium', 'high'];
@@ -86,8 +87,8 @@ export default function QuestsScreen() {
           <Field label="DESCRIPTION" value={form.description ?? ''} onChangeText={description => setForm({ ...form, description: description || null })} placeholder="What needs to get done?" multiline />
           <Text style={styles.label}>CATEGORY</Text><View style={styles.choices}>{categories.map(c => <Choice key={c} label={c} selected={form.category === c} onPress={() => setForm({ ...form, category: c })} />)}</View>
           <Text style={styles.label}>PRIORITY</Text><View style={styles.choices}>{priorities.map(p => <Choice key={p} label={p} selected={form.priority === p} onPress={() => setForm({ ...form, priority: p })} />)}</View>
-          <Field label="DUE DATE (YYYY-MM-DD)" value={form.due_date ?? ''} onChangeText={due_date => setForm({ ...form, due_date: due_date || null })} placeholder="2026-10-30" />
-          <Field label="DUE TIME (HH:MM, OPTIONAL)" value={form.due_time ?? ''} onChangeText={due_time => setForm({ ...form, due_time: due_time || null })} placeholder="14:30" />
+          <DateTimeField label="DUE DATE" mode="date" value={dateFromDateKey(form.due_date ?? '')} onChange={date => setForm({ ...form, due_date: localDateKey(date) })} onClear={() => setForm({ ...form, due_date: null, due_time: null })} placeholder="Choose due date" />
+          <DateTimeField label="DUE TIME (OPTIONAL)" mode="time" value={dateFromTimeKey(form.due_time)} onChange={date => setForm({ ...form, due_time: timeKeyFromDate(date) })} onClear={() => setForm({ ...form, due_time: null })} disabled={!form.due_date} placeholder={form.due_date ? 'Choose due time' : 'Choose a due date first'} />
           <Field label="ESTIMATED MINUTES" value={String(form.estimated_minutes)} onChangeText={raw => setForm({ ...form, estimated_minutes: Math.max(1, Number.parseInt(raw, 10) || 1) })} keyboardType="number-pad" />
           <Field label="NOTES" value={form.notes ?? ''} onChangeText={notes => setForm({ ...form, notes: notes || null })} placeholder="Optional notes" multiline />
           {error ? <Text style={styles.error}>{error}</Text> : null}

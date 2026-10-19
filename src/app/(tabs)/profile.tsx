@@ -1,16 +1,28 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { Alert, Pressable, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, typography, borders, radii } from '../../theme/tokens';
 import PixelCard from '../../components/ui/PixelCard';
 import ProgressBar from '../../components/ui/ProgressBar';
+import PixelAvatar, { isAvatarId } from '../../components/ui/PixelAvatar';
+import { useAuth } from '../../features/auth/AuthProvider';
+import { supabase } from '../../features/auth/supabase';
 
 /**
  * Profile screen — shows a static Level 1 / 0 XP display in Stage 1.
  * Gamification wiring happens in Stage 4.
  */
 export default function ProfileScreen() {
+  const { user } = useAuth();
+  const displayName = typeof user?.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : 'Hero';
+  const avatarId = isAvatarId(user?.user_metadata?.avatar_id) ? user.user_metadata.avatar_id : 'sprout';
+  const signOut = async () => {
+    const { error } = await supabase!.auth.signOut();
+    if (error) { Alert.alert('Could not sign out', error.message); return; }
+    router.replace('/onboarding');
+  };
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
@@ -24,10 +36,11 @@ export default function ProfileScreen() {
         <PixelCard style={styles.heroCard} elevated>
           <View style={styles.heroTop}>
             <View style={styles.avatarBox}>
-              <Ionicons name="person" size={40} color={colors.accentPrimary} />
+              <PixelAvatar avatarId={avatarId} size={49} />
             </View>
             <View style={styles.heroInfo}>
-              <Text style={styles.heroName}>Hero</Text>
+              <Text style={styles.heroName}>{displayName}</Text>
+              {user?.email ? <Text style={styles.subtitle}>{user.email}</Text> : null}
               <View style={styles.levelChip}>
                 <Ionicons name="star" size={12} color={colors.warning} />
                 <Text style={styles.levelText}>LEVEL 1</Text>
@@ -60,6 +73,7 @@ export default function ProfileScreen() {
             Achievements, weekly progress, notification preferences, timetable settings and data export will be available after the core task and gamification systems are built.
           </Text>
         </PixelCard>
+        <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.signOut}><Ionicons name="log-out-outline" size={18} color={colors.dangerLight}/><Text style={styles.signOutText}>Sign out</Text></Pressable>
       </View>
     </SafeAreaView>
   );
@@ -213,4 +227,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: typography.size.sm * typography.lineHeight.relaxed,
   },
+  signOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, padding: spacing.md, borderWidth: borders.thin, borderColor: colors.borderDanger, borderRadius: radii.sm },
+  signOutText: { color: colors.dangerLight, fontWeight: '700' },
 });

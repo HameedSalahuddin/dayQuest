@@ -13,7 +13,7 @@ export interface ScheduleException {
   id: number;
   date: string;
   entry_id: number | null;
-  exception_type: 'cancelled' | 'holiday' | 'one_off';
+  exception_type: 'cancelled' | 'holiday' | 'one_off' | 'modified';
   title: string | null;
   start_minute: number | null;
   end_minute: number | null;
@@ -65,20 +65,30 @@ export async function getEventsForDate(db: SQLiteDatabase, date: string): Promis
     listScheduleExceptions(db, previousDate),
   ]);
   const previousWeekly = await db.getAllAsync<ScheduleEntry>(
-    'SELECT * FROM schedule_entries WHERE weekday=? AND end_minute>1440 ORDER BY start_minute', previousWeekday,
+    'SELECT * FROM schedule_entries WHERE weekday=? ORDER BY start_minute', previousWeekday,
   );
   if (exceptions.some(item => item.exception_type === 'holiday')) return [];
   const yesterdayWasHoliday = yesterdayExceptions.some(item => item.exception_type === 'holiday');
 
   const cancelled = new Set(exceptions.filter(item => item.exception_type === 'cancelled').map(item => item.entry_id));
   const yesterdayCancelled = new Set(yesterdayExceptions.filter(item => item.exception_type === 'cancelled').map(item => item.entry_id));
+  const modifications = new Map(exceptions.filter(item => item.exception_type === 'modified' && item.entry_id !== null).map(item => [item.entry_id!, item]));
+  const yesterdayModifications = new Map(yesterdayExceptions.filter(item => item.exception_type === 'modified' && item.entry_id !== null).map(item => [item.entry_id!, item]));
   const events: DatedEvent[] = [];
   for (const event of weekly) {
-    if (!cancelled.has(event.id)) events.push({ ...event, key: `weekly-${event.id}`, source: 'weekly', continues_next_day: event.end_minute > 1440 });
+    const modification = modifications.get(event.id);
+    if (!cancelled.has(event.id)) events.push({ ...event,
+      ...(modification?.title ? { title: modification.title } : {}),
+      ...(modification?.start_minute !== null && modification?.start_minute !== undefined ? { start_minute: modification.start_minute } : {}),
+      ...(modification?.end_minute !== null && modification?.end_minute !== undefined ? { end_minute: modification.end_minute } : {}),
+      key: `weekly-${event.id}`, source: 'weekly', continues_next_day: (modification?.end_minute ?? event.end_minute) > 1440 });
   }
   for (const event of previousWeekly) {
-    if (!yesterdayWasHoliday && event.end_minute > 1440 && !yesterdayCancelled.has(event.id)) {
-      events.push({ ...event, start_minute: event.start_minute - 1440, end_minute: event.end_minute - 1440,
+    const modification = yesterdayModifications.get(event.id);
+    const modifiedStart = modification?.start_minute ?? event.start_minute;
+    const modifiedEnd = modification?.end_minute ?? event.end_minute;
+    if (!yesterdayWasHoliday && modifiedEnd > 1440 && !yesterdayCancelled.has(event.id)) {
+      events.push({ ...event, ...(modification?.title ? { title: modification.title } : {}), start_minute: modifiedStart - 1440, end_minute: modifiedEnd - 1440,
         key: `weekly-${event.id}-carry`, source: 'weekly', continues_next_day: false });
     }
   }
