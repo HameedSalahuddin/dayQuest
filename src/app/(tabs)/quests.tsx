@@ -9,7 +9,7 @@ import PixelBadge from '../../components/ui/PixelBadge';
 import EmptyState from '../../components/ui/EmptyState';
 import { deleteTask, listTasks, saveTask, setTaskCompleted } from '../../features/tasks/repository';
 import type { Task, TaskCategory, TaskInput, TaskPriority } from '../../features/tasks/types';
-import { classifyDeadline, localDateKey } from '../../utils/dates';
+import { classifyDeadline, isValidDateKey, isValidTimeKey, localDateKey } from '../../utils/dates';
 
 const categories: TaskCategory[] = ['assignment', 'lab', 'exam', 'revision', 'project', 'personal'];
 const priorities: TaskPriority[] = ['low', 'medium', 'high'];
@@ -41,7 +41,10 @@ export default function QuestsScreen() {
   };
   const save = async () => {
     if (!form.title.trim()) { setError('Add a title for this quest.'); return; }
-    if (form.due_date && !/^\d{4}-\d{2}-\d{2}$/.test(form.due_date)) { setError('Use a date in YYYY-MM-DD format.'); return; }
+    if (form.due_date && !isValidDateKey(form.due_date)) { setError('Enter a real date in YYYY-MM-DD format.'); return; }
+    if (form.due_time && !isValidTimeKey(form.due_time)) { setError('Enter a valid 24-hour time (HH:MM).'); return; }
+    if (form.due_time && !form.due_date) { setError('Add a due date before setting a due time.'); return; }
+    if (!Number.isInteger(form.estimated_minutes) || form.estimated_minutes < 1 || form.estimated_minutes > 1440) { setError('Estimated time must be between 1 and 1440 minutes.'); return; }
     try { await saveTask(db, form, editingId); setVisible(false); await refresh(); }
     catch { setError('Could not save this quest. Please try again.'); }
   };

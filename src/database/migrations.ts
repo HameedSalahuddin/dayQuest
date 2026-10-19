@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
   const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -57,6 +57,13 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       );
     `);
     version = 1;
+  }
+  if (version === 1) {
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS schedule_exceptions_date_idx ON schedule_exceptions(date);
+      CREATE INDEX IF NOT EXISTS schedule_exceptions_entry_date_idx ON schedule_exceptions(entry_id, date);
+    `);
+    version = 2;
   }
   await db.execAsync(`PRAGMA user_version = ${version};`);
 }

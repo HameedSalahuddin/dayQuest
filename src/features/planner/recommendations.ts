@@ -12,6 +12,7 @@ export function getFreeSlots(events: FixedEvent[], now = new Date()): FreeSlot[]
   for (const event of sorted) {
     const start = Math.max(current, event.start_minute);
     const end = Math.min(PLANNING_END_MINUTE, event.end_minute);
+    if (end <= cursor) continue;
     if (start > cursor) slots.push({ start: cursor, end: start, duration: start - cursor });
     cursor = Math.max(cursor, end);
   }
@@ -36,6 +37,6 @@ export function recommendTasks(tasks: Task[], slots: FreeSlot[], today: string, 
 }
 
 export function formatMinute(minute: number): string {
-  const normalized = minute % (24 * 60);
+  const normalized = ((minute % (24 * 60)) + (24 * 60)) % (24 * 60);
   return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}`;
 }
