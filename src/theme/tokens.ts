@@ -8,36 +8,38 @@
 // ---------------------------------------------------------------------------
 export const palette = {
   // Backgrounds
-  navy950: '#0a0e1a',
-  navy900: '#0d1224',
-  navy800: '#111827',
-  navy700: '#1a2235',
-  navy600: '#1e2d45',
+  navy950: '#12121e',
+  navy900: '#1a1a27',
+  navy800: '#222236',
+  navy700: '#292935',
+  navy600: '#383854',
 
   // Accents
-  green500: '#3d9970',
-  green400: '#4caf80',
-  green300: '#6fcf97',
-  green200: '#a8d8b8',
-  green100: '#d4edde',
+  green500: '#16a34a',
+  green400: '#22c55e',
+  green300: '#4ae176',
+  green200: '#86efac',
+  green100: '#dcfce7',
 
   // Text
-  cream100: '#f5f0e8',
-  cream200: '#e8e0d0',
-  cream300: '#c8c0b0',
+  cream100: '#f8fafc',
+  cream200: '#e3e0f2',
+  cream300: '#bdc8d1',
 
   // Warnings / deadlines
-  amber400: '#e6a817',
-  amber300: '#f0c040',
-  red500: '#c0392b',
-  red400: '#e74c3c',
-  red300: '#f08070',
+  amber400: '#ffc703',
+  amber300: '#ffdf94',
+  red500: '#ef4444',
+  red400: '#f87171',
+  red300: '#ffb4ab',
 
   // Neutrals
-  slate600: '#2d3748',
-  slate500: '#4a5568',
-  slate400: '#718096',
-  slate300: '#a0aec0',
+  slate600: '#3e484f',
+  slate500: '#4b5563',
+  slate400: '#87929a',
+  slate300: '#94a3b8',
+  manaBlue: '#38bdf8',
+  manaBlueLight: '#8ed5ff',
 
   // Pixel decorations
   white: '#ffffff',
@@ -51,7 +53,7 @@ export const palette = {
 export const colors = {
   // Backgrounds
   bgPrimary: palette.navy950,
-  bgSecondary: palette.navy900,
+  bgSecondary: '#12121e',
   bgCard: palette.navy800,
   bgElevated: palette.navy700,
   bgHighlight: palette.navy600,
@@ -63,9 +65,9 @@ export const colors = {
   textDisabled: palette.slate400,
 
   // Accent
-  accentPrimary: palette.green400,
-  accentSecondary: palette.green300,
-  accentFaint: palette.green100,
+  accentPrimary: palette.manaBlue,
+  accentSecondary: palette.manaBlueLight,
+  accentFaint: '#00354a',
 
   // Status
   danger: palette.red500,
@@ -81,10 +83,10 @@ export const colors = {
   borderWarning: palette.amber400,
 
   // Tab bar
-  tabBarBackground: palette.navy900,
-  tabBarActive: palette.green400,
+  tabBarBackground: '#1a1a27',
+  tabBarActive: palette.manaBlue,
   tabBarInactive: palette.slate400,
-  tabBarBorder: palette.navy700,
+  tabBarBorder: '#292935',
 } as const;
 
 // ---------------------------------------------------------------------------

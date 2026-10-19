@@ -45,17 +45,17 @@ const styles = StyleSheet.create({
   },
   accentBar: {
     width: borders.medium,
-    height: 16,
-    backgroundColor: colors.accentPrimary,
+    height: 20,
+    backgroundColor: colors.warning,
     borderRadius: 1,
   },
   textGroup: {
     flex: 1,
   },
   title: {
-    fontSize: typography.size.sm,
+    fontSize: typography.size.md,
     fontWeight: typography.weight.bold,
-    color: colors.textMuted,
+    color: colors.textPrimary,
     letterSpacing: typography.letterSpacing.widest,
     textTransform: 'uppercase',
   },

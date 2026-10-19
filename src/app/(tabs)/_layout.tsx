@@ -84,9 +84,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.tabBarBackground,
     borderTopWidth: borders.thin,
     borderTopColor: colors.tabBarBorder,
-    paddingBottom: 4,
-    paddingTop: 4,
-    height: 60,
+    paddingBottom: 6,
+    paddingTop: 6,
+    height: 66,
   },
   tabBarLabel: {
     fontSize: typography.size.xs,
@@ -100,14 +100,15 @@ const styles = StyleSheet.create({
   },
   iconWrapper: {
     width: 32,
-    height: 28,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 4,
   },
   iconWrapperActive: {
-    backgroundColor: colors.bgHighlight,
+    backgroundColor: '#0d0d19',
     borderWidth: 1,
-    borderColor: colors.borderAccent,
+    borderColor: colors.accentPrimary,
+    borderRadius: 3,
   },
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, View, Text, StyleSheet } from 'react-native';
+import { Alert, Pressable, View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,7 +38,7 @@ export default function ProfileScreen() {
       </View>
       <View style={styles.divider} />
 
-      <View style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
         {/* Hero card */}
         <PixelCard style={styles.heroCard} elevated>
           <View style={styles.heroTop}>
@@ -60,7 +60,7 @@ export default function ProfileScreen() {
               progress={progress.levelProgress}
               label={`XP to Level ${progress.level + 1}`}
               showPercent={false}
-              fillColor={colors.warning}
+              fillColor={colors.success}
             />
             <Text style={styles.xpNumbers}>{progress.xpIntoLevel} / 100 XP · {progress.totalXp} total</Text>
           </View>
@@ -68,20 +68,20 @@ export default function ProfileScreen() {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <StatBox icon="trophy-outline" value={String(progress.completedQuests)} label="Quests\nCompleted" />
-          <StatBox icon="flame-outline" value="0" label="Day\nStreak" />
+          <StatBox icon="trophy-outline" value={String(progress.completedQuests)} label="Quests\nCleared" />
           <StatBox icon="star-outline" value={String(progress.totalXp)} label="Total\nXP" />
+          <StatBox icon="flash-outline" value={String(progress.level)} label="Current\nLevel" />
         </View>
 
         {progressError ? <Text style={styles.progressError}>{progressError}</Text> : null}
         <PixelCard style={styles.comingCard}>
-          <Text style={styles.comingTitle}>[ NEXT UP ]</Text>
+          <Text style={styles.comingTitle}>QUEST RECORD</Text>
           <Text style={styles.comingBody}>
-            Achievements, streak tracking and data export are still in progress.
+            Your level and XP come from completed quests. Achievement badges and streak tracking will appear here when they are backed by app data.
           </Text>
         </PixelCard>
         <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.signOut}><Ionicons name="log-out-outline" size={18} color={colors.dangerLight}/><Text style={styles.signOutText}>Sign out</Text></Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -111,7 +111,9 @@ const statStyles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     borderWidth: borders.thin,
     borderColor: colors.borderDefault,
-    borderRadius: radii.sm,
+    borderRadius: radii.md,
+    borderBottomWidth: 4,
+    borderBottomColor: '#0d0d19',
     paddingVertical: spacing.md,
     gap: spacing.xxs,
   },
@@ -159,7 +161,11 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
+  },
+  bodyContent: {
     paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xl,
     gap: spacing.md,
   },
   heroCard: {

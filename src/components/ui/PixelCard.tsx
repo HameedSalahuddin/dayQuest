@@ -6,7 +6,7 @@ interface PixelCardProps {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
   /** Accent border on the left edge — useful for emphasis cards */
-  accentLeft?: boolean;
+  accentLeft?: boolean | string;
   /** Elevated variant uses a slightly lighter background */
   elevated?: boolean;
 }
@@ -26,7 +26,7 @@ export default function PixelCard({
       style={[
         styles.card,
         elevated && styles.elevated,
-        accentLeft && styles.accentLeft,
+        accentLeft ? [styles.accentLeft, typeof accentLeft === 'string' ? { borderLeftColor: accentLeft } : null] : null,
         shadows.sm,
         style,
       ]}
@@ -41,7 +41,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgCard,
     borderWidth: borders.thin,
     borderColor: colors.borderDefault,
-    borderRadius: radii.sm,
+    borderRadius: radii.md,
+    borderBottomWidth: 4,
+    borderBottomColor: '#0d0d19',
     padding: 12,
     overflow: 'hidden',
   },
@@ -49,7 +51,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgElevated,
   },
   accentLeft: {
-    borderLeftWidth: borders.medium,
-    borderLeftColor: colors.borderAccent,
+    borderLeftWidth: borders.thick,
+    borderLeftColor: colors.accentPrimary,
   },
 });

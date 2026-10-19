@@ -82,10 +82,10 @@ const styles = StyleSheet.create({
   },
   track: {
     width: '100%',
-    backgroundColor: colors.bgElevated,
-    borderRadius: radii.none,
+    backgroundColor: '#0f0f17',
+    borderRadius: radii.xs,
     borderWidth: borders.thin,
-    borderColor: colors.borderDefault,
+    borderColor: '#0f0f17',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    borderRadius: radii.none,
+    borderRadius: radii.xs,
   },
   tick: {
     position: 'absolute',
