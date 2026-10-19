@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,10 +11,11 @@ import { deleteTask, listTasks, saveTask, setTaskCompleted } from '../../feature
 import type { Task, TaskCategory, TaskInput, TaskPriority } from '../../features/tasks/types';
 import DateTimeField from '../../components/ui/DateTimeField';
 import { classifyDeadline, dateFromDateKey, dateFromTimeKey, isValidDateKey, isValidTimeKey, localDateKey, timeKeyFromDate } from '../../utils/dates';
+import { ensureReminderPermission, syncTaskReminderState } from '../../features/reminders/service';
 
 const categories: TaskCategory[] = ['assignment', 'lab', 'exam', 'revision', 'project', 'personal'];
 const priorities: TaskPriority[] = ['low', 'medium', 'high'];
-const blankForm: TaskInput = { title: '', description: null, subject: null, category: 'assignment', due_date: null, due_time: null, estimated_minutes: 30, priority: 'medium', notes: null };
+const blankForm: TaskInput = { title: '', description: null, subject: null, category: 'assignment', due_date: null, due_time: null, estimated_minutes: 30, priority: 'medium', deadline_reminder_enabled: false, notes: null };
 
 export default function QuestsScreen() {
   const db = useSQLiteContext();
@@ -37,7 +38,7 @@ export default function QuestsScreen() {
     setEditingId(task?.id);
     setForm(task ? { title: task.title, description: task.description, subject: task.subject, category: task.category,
       due_date: task.due_date, due_time: task.due_time, estimated_minutes: task.estimated_minutes,
-      priority: task.priority, notes: task.notes } : blankForm);
+      priority: task.priority, deadline_reminder_enabled: task.deadline_reminder_enabled === 1, notes: task.notes } : blankForm);
     setError(''); setVisible(true);
   };
   const save = async () => {
@@ -45,8 +46,27 @@ export default function QuestsScreen() {
     if (form.due_date && !isValidDateKey(form.due_date)) { setError('Enter a real date in YYYY-MM-DD format.'); return; }
     if (form.due_time && !isValidTimeKey(form.due_time)) { setError('Enter a valid 24-hour time (HH:MM).'); return; }
     if (form.due_time && !form.due_date) { setError('Add a due date before setting a due time.'); return; }
+    if (form.deadline_reminder_enabled && !form.due_date) { setError('Add a due date before setting a reminder.'); return; }
+    if (form.deadline_reminder_enabled && form.due_date) {
+      const reminderDate = dateFromDateKey(form.due_date);
+      const [hour, minute] = (form.due_time ?? '09:00').split(':').map(Number);
+      reminderDate?.setHours(hour, minute, 0, 0);
+      if (reminderDate && reminderDate.getTime() <= Date.now()) { setError('Choose a future deadline time to set a reminder.'); return; }
+    }
     if (!Number.isInteger(form.estimated_minutes) || form.estimated_minutes < 1 || form.estimated_minutes > 1440) { setError('Estimated time must be between 1 and 1440 minutes.'); return; }
-    try { await saveTask(db, form, editingId); setVisible(false); await refresh(); }
+    const existingReminderEnabled = editingId !== undefined && tasks.some(task => task.id === editingId && task.deadline_reminder_enabled === 1);
+    if (form.deadline_reminder_enabled && !existingReminderEnabled && !(await ensureReminderPermission())) {
+      setError(Platform.OS === 'web' ? 'Local reminders are available in the iOS and Android apps.' : 'Allow notifications in your device settings to use reminders.'); return;
+    }
+    try {
+      const taskId = await saveTask(db, form, editingId);
+      setVisible(false); await refresh();
+      try {
+        const reminderScheduled = await syncTaskReminderState(db, taskId);
+        if (form.deadline_reminder_enabled && !reminderScheduled) Alert.alert('Quest saved', 'Notifications are currently disabled. Enable them in device settings, then switch the deadline reminder off and on again.');
+      }
+      catch { Alert.alert('Quest saved', 'The quest was saved, but its reminder could not be updated. Check notification and exact alarm access in device settings, then try again.'); }
+    }
     catch { setError('Could not save this quest. Please try again.'); }
   };
   const remove = (task: Task) => Alert.alert('Delete quest?', `“${task.title}” will be removed.`, [
@@ -87,8 +107,17 @@ export default function QuestsScreen() {
           <Field label="DESCRIPTION" value={form.description ?? ''} onChangeText={description => setForm({ ...form, description: description || null })} placeholder="What needs to get done?" multiline />
           <Text style={styles.label}>CATEGORY</Text><View style={styles.choices}>{categories.map(c => <Choice key={c} label={c} selected={form.category === c} onPress={() => setForm({ ...form, category: c })} />)}</View>
           <Text style={styles.label}>PRIORITY</Text><View style={styles.choices}>{priorities.map(p => <Choice key={p} label={p} selected={form.priority === p} onPress={() => setForm({ ...form, priority: p })} />)}</View>
-          <DateTimeField label="DUE DATE" mode="date" value={dateFromDateKey(form.due_date ?? '')} onChange={date => setForm({ ...form, due_date: localDateKey(date) })} onClear={() => setForm({ ...form, due_date: null, due_time: null })} placeholder="Choose due date" />
+          <DateTimeField label="DUE DATE" mode="date" value={dateFromDateKey(form.due_date ?? '')} onChange={date => setForm({ ...form, due_date: localDateKey(date) })} onClear={() => setForm({ ...form, due_date: null, due_time: null, deadline_reminder_enabled: false })} placeholder="Choose due date" />
           <DateTimeField label="DUE TIME (OPTIONAL)" mode="time" value={dateFromTimeKey(form.due_time)} onChange={date => setForm({ ...form, due_time: timeKeyFromDate(date) })} onClear={() => setForm({ ...form, due_time: null })} disabled={!form.due_date} placeholder={form.due_date ? 'Choose due time' : 'Choose a due date first'} />
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: form.deadline_reminder_enabled, disabled: !form.due_date || Platform.OS === 'web' }} disabled={!form.due_date || Platform.OS === 'web'} onPress={async () => {
+            if (form.deadline_reminder_enabled) { setForm({ ...form, deadline_reminder_enabled: false }); return; }
+            if (await ensureReminderPermission()) setForm({ ...form, deadline_reminder_enabled: true });
+            else setError(Platform.OS === 'web' ? 'Local reminders are available in the iOS and Android apps.' : 'Allow notifications in your device settings to use reminders.');
+          }} style={[styles.reminderOption, (!form.due_date || Platform.OS === 'web') && styles.reminderDisabled]}>
+            <Ionicons name={form.deadline_reminder_enabled ? 'checkbox' : 'square-outline'} size={21} color={form.deadline_reminder_enabled ? colors.accentPrimary : colors.textMuted}/>
+            <View style={styles.reminderInfo}><Text style={styles.reminderTitle}>Remind me at the deadline</Text><Text style={styles.reminderHint}>At the due time, or 09:00 if no time is set.</Text></View>
+          </Pressable>
+          {Platform.OS === 'web' ? <Text style={styles.reminderHint}>Local notifications are supported in the iOS and Android apps.</Text> : null}
           <Field label="ESTIMATED MINUTES" value={String(form.estimated_minutes)} onChangeText={raw => setForm({ ...form, estimated_minutes: Math.max(1, Number.parseInt(raw, 10) || 1) })} keyboardType="number-pad" />
           <Field label="NOTES" value={form.notes ?? ''} onChangeText={notes => setForm({ ...form, notes: notes || null })} placeholder="Optional notes" multiline />
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -114,5 +143,5 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: typography.size.xxl, fontWeight: '700' }, subtitle: { color: colors.textMuted, fontSize: typography.size.sm, marginTop: spacing.xxs }, divider: { height: 1, backgroundColor: colors.borderDefault, marginHorizontal: spacing.md },
   add: { backgroundColor: colors.accentPrimary, borderRadius: radii.sm, width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }, empty: { flex: 1, justifyContent: 'center' }, list: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xxl }, card: { gap: spacing.sm },
   taskTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, check: { padding: 2 }, taskInfo: { flex: 1, gap: 3 }, taskTitle: { color: colors.textPrimary, fontSize: typography.size.md, fontWeight: '700' }, completed: { color: colors.textMuted, textDecorationLine: 'line-through' }, meta: { color: colors.textMuted, fontSize: typography.size.xs, textTransform: 'capitalize' }, badges: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginLeft: 38 }, description: { color: colors.textSecondary, marginLeft: 38, fontSize: typography.size.sm }, error: { color: colors.dangerLight, padding: spacing.md },
-  modal: { flex: 1, backgroundColor: colors.bgPrimary }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault }, modalTitle: { fontSize: typography.size.xl, color: colors.textPrimary, fontWeight: '700' }, cancel: { color: colors.accentPrimary, fontSize: typography.size.md }, form: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }, field: { gap: spacing.xs }, label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '700', letterSpacing: 1 }, input: { minHeight: 44, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, multiline: { minHeight: 80, textAlignVertical: 'top' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, choice: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.xs, borderWidth: borders.thin, borderColor: colors.borderDefault, backgroundColor: colors.bgCard }, choiceActive: { borderColor: colors.borderAccent, backgroundColor: colors.bgHighlight }, choiceText: { color: colors.textMuted, textTransform: 'capitalize', fontSize: typography.size.sm }, choiceTextActive: { color: colors.accentSecondary }, save: { backgroundColor: colors.accentPrimary, padding: spacing.md, borderRadius: radii.sm, alignItems: 'center' }, saveText: { color: colors.bgPrimary, fontWeight: '700', fontSize: typography.size.md },
+  modal: { flex: 1, backgroundColor: colors.bgPrimary }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault }, modalTitle: { fontSize: typography.size.xl, color: colors.textPrimary, fontWeight: '700' }, cancel: { color: colors.accentPrimary, fontSize: typography.size.md }, form: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }, field: { gap: spacing.xs }, label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '700', letterSpacing: 1 }, input: { minHeight: 44, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, reminderOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, padding: spacing.sm }, reminderDisabled: { opacity: 0.5 }, reminderInfo: { flex: 1, gap: 2 }, reminderTitle: { color: colors.textPrimary, fontSize: typography.size.sm, fontWeight: '700' }, reminderHint: { color: colors.textMuted, fontSize: typography.size.xs }, multiline: { minHeight: 80, textAlignVertical: 'top' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, choice: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.xs, borderWidth: borders.thin, borderColor: colors.borderDefault, backgroundColor: colors.bgCard }, choiceActive: { borderColor: colors.borderAccent, backgroundColor: colors.bgHighlight }, choiceText: { color: colors.textMuted, textTransform: 'capitalize', fontSize: typography.size.sm }, choiceTextActive: { color: colors.accentSecondary }, save: { backgroundColor: colors.accentPrimary, padding: spacing.md, borderRadius: radii.sm, alignItems: 'center' }, saveText: { color: colors.bgPrimary, fontWeight: '700', fontSize: typography.size.md },
 });

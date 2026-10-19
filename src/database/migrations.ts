@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 4;
 
 export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
   const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -64,6 +64,37 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       CREATE INDEX IF NOT EXISTS schedule_exceptions_entry_date_idx ON schedule_exceptions(entry_id, date);
     `);
     version = 2;
+  }
+  if (version === 2) {
+    await db.execAsync(`
+      CREATE TABLE task_xp_awards (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        task_created_at TEXT NOT NULL,
+        xp INTEGER NOT NULL CHECK (xp > 0),
+        awarded_at TEXT NOT NULL,
+        UNIQUE (task_id, task_created_at)
+      );
+      CREATE INDEX task_xp_awards_task_idx ON task_xp_awards(task_id);
+      INSERT INTO task_xp_awards (task_id, task_created_at, xp, awarded_at)
+        SELECT id, created_at, 25, COALESCE(completed_at, updated_at, created_at)
+        FROM tasks WHERE status='completed';
+    `);
+    version = 3;
+  }
+  if (version === 3) {
+    await db.execAsync(`
+      ALTER TABLE tasks ADD COLUMN deadline_reminder_enabled INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE tasks ADD COLUMN deadline_notification_id TEXT;
+      CREATE TABLE study_sessions (
+        task_id INTEGER PRIMARY KEY NOT NULL,
+        session_date TEXT NOT NULL,
+        session_time TEXT NOT NULL,
+        notification_id TEXT,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    version = 4;
   }
   await db.execAsync(`PRAGMA user_version = ${version};`);
 }

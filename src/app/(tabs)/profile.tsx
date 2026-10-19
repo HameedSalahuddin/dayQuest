@@ -1,23 +1,30 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { Alert, Pressable, View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSQLiteContext } from 'expo-sqlite';
 import { colors, spacing, typography, borders, radii } from '../../theme/tokens';
 import PixelCard from '../../components/ui/PixelCard';
 import ProgressBar from '../../components/ui/ProgressBar';
 import PixelAvatar, { isAvatarId } from '../../components/ui/PixelAvatar';
 import { useAuth } from '../../features/auth/AuthProvider';
 import { supabase } from '../../features/auth/supabase';
+import { getProgressSummary, type ProgressSummary } from '../../features/progress/repository';
 
-/**
- * Profile screen — shows a static Level 1 / 0 XP display in Stage 1.
- * Gamification wiring happens in Stage 4.
- */
 export default function ProfileScreen() {
+  const db = useSQLiteContext();
   const { user } = useAuth();
+  const [progress, setProgress] = useState<ProgressSummary>({ totalXp: 0, level: 1, xpIntoLevel: 0, levelProgress: 0, completedQuests: 0 });
+  const [progressError, setProgressError] = useState('');
   const displayName = typeof user?.user_metadata?.display_name === 'string' ? user.user_metadata.display_name : 'Hero';
   const avatarId = isAvatarId(user?.user_metadata?.avatar_id) ? user.user_metadata.avatar_id : 'sprout';
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    getProgressSummary(db).then(value => { if (active) { setProgress(value); setProgressError(''); } })
+      .catch(() => { if (active) setProgressError('Could not load your progress.'); });
+    return () => { active = false; };
+  }, [db]));
   const signOut = async () => {
     const { error } = await supabase!.auth.signOut();
     if (error) { Alert.alert('Could not sign out', error.message); return; }
@@ -43,34 +50,34 @@ export default function ProfileScreen() {
               {user?.email ? <Text style={styles.subtitle}>{user.email}</Text> : null}
               <View style={styles.levelChip}>
                 <Ionicons name="star" size={12} color={colors.warning} />
-                <Text style={styles.levelText}>LEVEL 1</Text>
+                <Text style={styles.levelText}>LEVEL {progress.level}</Text>
               </View>
             </View>
           </View>
 
           <View style={styles.xpSection}>
             <ProgressBar
-              progress={0}
-              label="XP to Level 2"
+              progress={progress.levelProgress}
+              label={`XP to Level ${progress.level + 1}`}
               showPercent={false}
               fillColor={colors.warning}
             />
-            <Text style={styles.xpNumbers}>0 / 100 XP</Text>
+            <Text style={styles.xpNumbers}>{progress.xpIntoLevel} / 100 XP · {progress.totalXp} total</Text>
           </View>
         </PixelCard>
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <StatBox icon="trophy-outline" value="0" label="Quests\nCompleted" />
+          <StatBox icon="trophy-outline" value={String(progress.completedQuests)} label="Quests\nCompleted" />
           <StatBox icon="flame-outline" value="0" label="Day\nStreak" />
-          <StatBox icon="star-outline" value="0" label="Total\nXP" />
+          <StatBox icon="star-outline" value={String(progress.totalXp)} label="Total\nXP" />
         </View>
 
-        {/* Coming soon notice */}
+        {progressError ? <Text style={styles.progressError}>{progressError}</Text> : null}
         <PixelCard style={styles.comingCard}>
-          <Text style={styles.comingTitle}>[ COMING IN STAGE 4 ]</Text>
+          <Text style={styles.comingTitle}>[ NEXT UP ]</Text>
           <Text style={styles.comingBody}>
-            Achievements, weekly progress, notification preferences, timetable settings and data export will be available after the core task and gamification systems are built.
+            Achievements, streak tracking and data export are still in progress.
           </Text>
         </PixelCard>
         <Pressable accessibilityRole="button" onPress={() => void signOut()} style={styles.signOut}><Ionicons name="log-out-outline" size={18} color={colors.dangerLight}/><Text style={styles.signOutText}>Sign out</Text></Pressable>
@@ -229,4 +236,5 @@ const styles = StyleSheet.create({
   },
   signOut: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, padding: spacing.md, borderWidth: borders.thin, borderColor: colors.borderDanger, borderRadius: radii.sm },
   signOutText: { color: colors.dangerLight, fontWeight: '700' },
+  progressError: { color: colors.dangerLight, fontSize: typography.size.xs },
 });

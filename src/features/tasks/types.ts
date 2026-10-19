@@ -14,9 +14,13 @@ export interface Task {
   priority: TaskPriority;
   status: TaskStatus;
   completed_at: string | null;
+  deadline_reminder_enabled: number;
+  deadline_notification_id: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type TaskInput = Pick<Task, 'title' | 'description' | 'subject' | 'category' | 'due_date' | 'due_time' | 'estimated_minutes' | 'priority' | 'notes'>;
+export type TaskInput = Pick<Task, 'title' | 'description' | 'subject' | 'category' | 'due_date' | 'due_time' | 'estimated_minutes' | 'priority' | 'notes'> & {
+  deadline_reminder_enabled: boolean;
+};
