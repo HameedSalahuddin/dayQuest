@@ -19,6 +19,8 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="onboarding" />
             <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="friends-qr" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="friends-scan" options={{ presentation: 'modal' }} />
           </Stack>
         </AuthProvider>
       </SQLiteProvider>

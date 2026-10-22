@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors, typography, borders } from '../../theme/tokens';
 import { useAuth } from '../../features/auth/AuthProvider';
+import OnlinePresenceBridge from '../../features/social/OnlinePresenceBridge';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -29,6 +30,8 @@ export default function TabsLayout() {
   if (loading) return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bgPrimary }}><ActivityIndicator color={colors.accentPrimary} /></View>;
   if (!session) return <Redirect href="/onboarding" />;
   return (
+    <>
+    <OnlinePresenceBridge />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -67,6 +70,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="friends"
+        options={{
+          title: 'Friends',
+          tabBarIcon: ({ focused, color, size }) => (
+            <TabIcon name={focused ? 'people' : 'people-outline'} focused={focused} color={color as string} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -76,6 +88,7 @@ export default function TabsLayout() {
         }}
       />
     </Tabs>
+    </>
   );
 }
 
