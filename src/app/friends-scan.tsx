@@ -1,10 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-// Expo Camera is declared as an app dependency. Its native package could not be
-// unpacked in the current network-restricted environment.
-// @ts-ignore -- retain typechecking of the remaining app while the package install is pending.
-// eslint-disable-next-line import/no-unresolved
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
