@@ -8,6 +8,7 @@ import { colors, spacing, typography, borders, radii } from '../../theme/tokens'
 import PixelCard from '../../components/ui/PixelCard';
 import ProgressBar from '../../components/ui/ProgressBar';
 import PixelAvatar, { isAvatarId } from '../../components/ui/PixelAvatar';
+import ProfileOptionManager from '../../components/ui/ProfileOptionManager';
 import { useAuth } from '../../features/auth/AuthProvider';
 import { supabase } from '../../features/auth/supabase';
 import { getProgressSummary, type ProgressSummary } from '../../features/progress/repository';
@@ -72,6 +73,10 @@ export default function ProfileScreen() {
           <StatBox icon="star-outline" value={String(progress.totalXp)} label="Total\nXP" />
           <StatBox icon="flash-outline" value={String(progress.level)} label="Current\nLevel" />
         </View>
+
+        <Text style={styles.catalogHeading}>YOUR STUDY PROFILE</Text>
+        <ProfileOptionManager type="subject" title="Subjects" description="Add your courses once, then select them on quests." placeholder="e.g. Biology" />
+        <ProfileOptionManager type="extracurricular" title="Extracurriculars" description="Add clubs, sports, and activities for your timetable." placeholder="e.g. Debate club" />
 
         {progressError ? <Text style={styles.progressError}>{progressError}</Text> : null}
         <PixelCard style={styles.comingCard}>
@@ -226,6 +231,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
   },
+  catalogHeading: { color: colors.warning, fontSize: typography.size.xs, fontWeight: '800', letterSpacing: 1.4, marginTop: spacing.xs },
   comingCard: {
     gap: spacing.xs,
   },

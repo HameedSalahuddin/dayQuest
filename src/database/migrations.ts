@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 
 export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
   const result = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -95,6 +95,19 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
       );
     `);
     version = 4;
+  }
+  if (version === 4) {
+    await db.execAsync(`
+      CREATE TABLE profile_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        option_type TEXT NOT NULL CHECK (option_type IN ('subject', 'extracurricular')),
+        name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (option_type, name COLLATE NOCASE)
+      );
+      CREATE INDEX profile_options_type_idx ON profile_options(option_type, name COLLATE NOCASE);
+    `);
+    version = 5;
   }
   await db.execAsync(`PRAGMA user_version = ${version};`);
 }

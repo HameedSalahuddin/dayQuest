@@ -7,214 +7,173 @@ import { colors, spacing, typography, borders, radii } from '../../theme/tokens'
 import PixelCard from '../../components/ui/PixelCard';
 import EmptyState from '../../components/ui/EmptyState';
 import DateTimeField from '../../components/ui/DateTimeField';
-import { addScheduleException, deleteScheduleException, getEventsForDate, hasScheduleOverlap, listScheduleEntries, listScheduleExceptions, type ScheduleEntry, type ScheduleException } from '../../features/schedule/repository';
-import { dateFromDateKey, dateFromTimeKey, dateKeyOffset, isValidDateKey, localDateKey, parseTimeRange, timeKeyFromDate, weekdayForDateKey } from '../../utils/dates';
+import { hasScheduleOverlap, listScheduleEntries, type ScheduleEntry } from '../../features/schedule/repository';
+import { listProfileOptions, type ProfileOption } from '../../features/profile/options';
+import { dateFromTimeKey, parseTimeRange, timeKeyFromDate } from '../../utils/dates';
 
-type EventType = 'class' | 'commitment';
+type EventType = 'class' | 'commitment' | 'extracurricular';
 const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const fullDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const showTime = (minutes: number) => { const value = ((minutes % 1440) + 1440) % 1440; return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`; };
-const nextDateForWeekday = (day: number) => dateKeyOffset(localDateKey(new Date()), (day - new Date().getDay() + 7) % 7);
 
 export default function ScheduleScreen() {
   const db = useSQLiteContext();
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
+  const [subjects, setSubjects] = useState<ProfileOption[]>([]);
+  const [activities, setActivities] = useState<ProfileOption[]>([]);
   const [selectedDay, setSelectedDay] = useState(new Date().getDay());
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<number>();
-  const [title, setTitle] = useState(''); const [subject, setSubject] = useState(''); const [location, setLocation] = useState('');
-  const [weekday, setWeekday] = useState(new Date().getDay()); const [start, setStart] = useState('09:00'); const [end, setEnd] = useState('10:00'); const [kind, setKind] = useState<EventType>('class'); const [error, setError] = useState('');
-  const [exceptionDate, setExceptionDate] = useState(() => localDateKey(new Date()));
-  const [exceptions, setExceptions] = useState<ScheduleException[]>([]);
-  const [oneOffTitle, setOneOffTitle] = useState(''); const [oneOffStart, setOneOffStart] = useState('09:00'); const [oneOffEnd, setOneOffEnd] = useState('10:00');
-  const [changeEntry, setChangeEntry] = useState<ScheduleEntry | null>(null);
-  const [changeStart, setChangeStart] = useState('09:00'); const [changeEnd, setChangeEnd] = useState('10:00');
-  const [changeError, setChangeError] = useState('');
-  const refresh = useCallback(async () => { try { setEntries(await listScheduleEntries(db)); } catch { setError('Could not load your schedule.'); } }, [db]);
-  const refreshExceptions = useCallback(async () => {
-    if (!isValidDateKey(exceptionDate)) { setExceptions([]); return; }
-    try { setExceptions(await listScheduleExceptions(db, exceptionDate)); } catch { setError('Could not load date-specific changes.'); }
-  }, [db, exceptionDate]);
+  const [title, setTitle] = useState('');
+  const [subject, setSubject] = useState('');
+  const [location, setLocation] = useState('');
+  const [weekday, setWeekday] = useState(new Date().getDay());
+  const [start, setStart] = useState('09:00');
+  const [end, setEnd] = useState('10:00');
+  const [kind, setKind] = useState<EventType>('class');
+  const [error, setError] = useState('');
+
+  const refresh = useCallback(async () => {
+    try {
+      const [rows, subjectOptions, activityOptions] = await Promise.all([
+        listScheduleEntries(db), listProfileOptions(db, 'subject'), listProfileOptions(db, 'extracurricular'),
+      ]);
+      setEntries(rows); setSubjects(subjectOptions); setActivities(activityOptions);
+    } catch { setError('Could not load your schedule.'); }
+  }, [db]);
+
   useEffect(() => {
     let active = true;
-    listScheduleEntries(db)
-      .then(rows => { if (active) setEntries(rows); })
+    Promise.all([listScheduleEntries(db), listProfileOptions(db, 'subject'), listProfileOptions(db, 'extracurricular')])
+      .then(([rows, subjectOptions, activityOptions]) => { if (active) { setEntries(rows); setSubjects(subjectOptions); setActivities(activityOptions); } })
       .catch(() => { if (active) setError('Could not load your schedule.'); });
     return () => { active = false; };
   }, [db]);
-  useEffect(() => {
-    if (!isValidDateKey(exceptionDate)) return;
-    let active = true;
-    listScheduleExceptions(db, exceptionDate)
-      .then(rows => { if (active) setExceptions(rows); })
-      .catch(() => { if (active) setError('Could not load date-specific changes.'); });
-    return () => { active = false; };
-  }, [db, exceptionDate]);
-  const openEditor = (entry?: ScheduleEntry) => { setEditId(entry?.id); setTitle(entry?.title ?? ''); setSubject(entry?.subject ?? ''); setLocation(entry?.location ?? ''); setWeekday(entry?.weekday ?? selectedDay); setStart(entry ? showTime(entry.start_minute) : '09:00'); setEnd(entry ? showTime(entry.end_minute % 1440) : '10:00'); setKind(entry?.event_type ?? 'class'); setError(''); setModal(true); };
+
+  const openEditor = async (entry?: ScheduleEntry) => {
+    try {
+      const [subjectOptions, activityOptions] = await Promise.all([listProfileOptions(db, 'subject'), listProfileOptions(db, 'extracurricular')]);
+      setSubjects(subjectOptions); setActivities(activityOptions);
+    } catch { setSubjects([]); setActivities([]); }
+    setEditId(entry?.id); setTitle(entry?.title ?? ''); setSubject(entry?.subject ?? ''); setLocation(entry?.location ?? '');
+    setWeekday(entry?.weekday ?? selectedDay); setStart(entry ? showTime(entry.start_minute) : '09:00'); setEnd(entry ? showTime(entry.end_minute % 1440) : '10:00');
+    setKind(entry?.event_type === 'extracurricular' ? 'extracurricular' : entry?.event_type === 'commitment' ? 'commitment' : 'class');
+    setError(''); setModal(true);
+  };
+
   const save = async () => {
     const range = parseTimeRange(start, end);
-    const startMinute = range?.start ?? null, endMinute = range?.end ?? null;
     if (!title.trim()) { setError('Add a name for this event.'); return; }
-    if (startMinute === null || endMinute === null) { setError('Enter valid 24-hour times. An end time earlier than the start means it ends the next day.'); return; }
-    const overlaps = hasScheduleOverlap(entries, weekday, startMinute, endMinute, editId);
-    if (overlaps) { setError('This overlaps another fixed event on that day. Adjust the time to continue.'); return; }
+    if (!range) { setError('Choose a valid start and end time. An end time earlier than the start means it ends the next day.'); return; }
+    if (hasScheduleOverlap(entries, weekday, range.start, range.end, editId)) { setError('This overlaps another fixed event on that day. Adjust the time to continue.'); return; }
     const now = new Date().toISOString();
     try {
-      if (editId === undefined) await db.runAsync(`INSERT INTO schedule_entries (title, subject, location, weekday, start_minute, end_minute, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, title.trim(), subject || null, location || null, weekday, startMinute, endMinute, kind, now, now);
-      else await db.runAsync(`UPDATE schedule_entries SET title=?, subject=?, location=?, weekday=?, start_minute=?, end_minute=?, event_type=?, updated_at=? WHERE id=?`, title.trim(), subject || null, location || null, weekday, startMinute, endMinute, kind, now, editId);
+      if (editId === undefined) {
+        await db.runAsync('INSERT INTO schedule_entries (title, subject, location, weekday, start_minute, end_minute, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', title.trim(), subject || null, location.trim() || null, weekday, range.start, range.end, kind, now, now);
+      } else {
+        await db.runAsync('UPDATE schedule_entries SET title=?, subject=?, location=?, weekday=?, start_minute=?, end_minute=?, event_type=?, updated_at=? WHERE id=?', title.trim(), subject || null, location.trim() || null, weekday, range.start, range.end, kind, now, editId);
+      }
       setModal(false); await refresh();
     } catch { setError('Could not save this event. Try again.'); }
   };
-  const addOneOff = async () => {
-    const day = weekdayForDateKey(exceptionDate);
-    const range = parseTimeRange(oneOffStart, oneOffEnd);
-    if (!isValidDateKey(exceptionDate)) { setError('Enter a real date in YYYY-MM-DD format.'); return; }
-    if (!oneOffTitle.trim()) { setError('Add a name for this one-off event.'); return; }
-    if (!range) { setError('Enter valid 24-hour times for this event.'); return; }
-    if (exceptions.some(item => item.exception_type === 'holiday')) { setError('Remove the holiday before adding an event.'); return; }
-    let previousExceptions: ScheduleException[];
-    let nextExceptions: ScheduleException[];
-    try {
-      [previousExceptions, nextExceptions] = await Promise.all([
-        listScheduleExceptions(db, dateKeyOffset(exceptionDate, -1)),
-        listScheduleExceptions(db, dateKeyOffset(exceptionDate, 1)),
-      ]);
-    } catch { setError('Could not check nearby events. Please try again.'); return; }
-    const overlapsDate = exceptions.some(item => item.exception_type === 'one_off' && item.start_minute !== null && item.end_minute !== null && range.start < item.end_minute && range.end > item.start_minute);
-    const cancelledIds = (rows: ScheduleException[]) => new Set(rows.filter(item => item.exception_type === 'cancelled').map(item => item.entry_id));
-    const currentCancelled = cancelledIds(exceptions);
-    const previousCancelled = cancelledIds(previousExceptions);
-    const nextCancelled = cancelledIds(nextExceptions);
-    const overlapsWeekly = entries.some(item =>
-      (item.weekday === day && !currentCancelled.has(item.id) && range.start < item.end_minute && range.end > item.start_minute) ||
-      (item.weekday === ((day! + 6) % 7) && !previousExceptions.some(row => row.exception_type === 'holiday') && !previousCancelled.has(item.id) && item.end_minute > 1440 && range.start < item.end_minute - 1440) ||
-      (item.weekday === ((day! + 1) % 7) && !nextExceptions.some(row => row.exception_type === 'holiday') && !nextCancelled.has(item.id) && range.end > 1440 && range.end - 1440 > item.start_minute));
-    const overlapsPreviousOneOff = !previousExceptions.some(item => item.exception_type === 'holiday') && previousExceptions.some(item => item.exception_type === 'one_off' && item.end_minute !== null && item.end_minute > 1440 && range.start < item.end_minute - 1440);
-    const overlapsNextOneOff = !nextExceptions.some(item => item.exception_type === 'holiday') && range.end > 1440 && nextExceptions.some(item => item.exception_type === 'one_off' && item.start_minute !== null && item.end_minute !== null && range.end - 1440 > item.start_minute && 0 < item.end_minute);
-    if (overlapsDate || overlapsWeekly || overlapsPreviousOneOff || overlapsNextOneOff) { setError('This event overlaps another event on or around that date.'); return; }
-    try {
-      await addScheduleException(db, { date: exceptionDate, entry_id: null, exception_type: 'one_off', title: oneOffTitle.trim(), start_minute: range.start, end_minute: range.end, notes: null });
-      setOneOffTitle(''); setError(''); await refreshExceptions();
-    } catch { setError('Could not save this one-off event.'); }
-  };
-  const addHoliday = async () => {
-    if (!isValidDateKey(exceptionDate)) { setError('Enter a real date in YYYY-MM-DD format.'); return; }
-    try {
-      await db.runAsync('DELETE FROM schedule_exceptions WHERE date=? AND exception_type=?', exceptionDate, 'holiday');
-      await addScheduleException(db, { date: exceptionDate, entry_id: null, exception_type: 'holiday', title: 'Holiday', start_minute: null, end_minute: null, notes: null });
-      setError(''); await refreshExceptions();
-    } catch { setError('Could not save this holiday.'); }
-  };
-  const cancelForDate = async (entry: ScheduleEntry) => {
-    if (!isValidDateKey(exceptionDate) || weekdayForDateKey(exceptionDate) !== entry.weekday) { setError('Choose a date that matches this event’s weekday.'); return; }
-    try {
-      if (!exceptions.some(item => item.exception_type === 'cancelled' && item.entry_id === entry.id)) {
-        await addScheduleException(db, { date: exceptionDate, entry_id: entry.id, exception_type: 'cancelled', title: null, start_minute: null, end_minute: null, notes: null });
-      }
-      setError(''); await refreshExceptions();
-    } catch { setError('Could not cancel this event for the selected date.'); }
-  };
-  const openDateChange = (entry: ScheduleEntry) => {
-    const exception = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
-    setChangeEntry(entry);
-    setChangeStart(showTime(exception?.start_minute ?? entry.start_minute));
-    setChangeEnd(showTime((exception?.end_minute ?? entry.end_minute) % 1440));
-    setChangeError('');
-  };
-  const saveDateChange = async () => {
-    if (!changeEntry || !isValidDateKey(exceptionDate) || weekdayForDateKey(exceptionDate) !== changeEntry.weekday) {
-      setChangeError('Choose a date that matches this event’s weekday.'); return;
-    }
-    const range = parseTimeRange(changeStart, changeEnd);
-    if (!range) { setChangeError('Choose a valid start and end time.'); return; }
-    try {
-      const [dateEvents, nextDateEvents] = await Promise.all([
-        getEventsForDate(db, exceptionDate),
-        range.end > 1440 ? getEventsForDate(db, dateKeyOffset(exceptionDate, 1)) : Promise.resolve([]),
-      ]);
-      const targetKey = `weekly-${changeEntry.id}`;
-      const collision = dateEvents.some(event => event.key !== targetKey && range.start < event.end_minute && range.end > event.start_minute) ||
-        (range.end > 1440 && nextDateEvents.some(event => event.key !== `${targetKey}-carry` && event.start_minute < range.end - 1440 && event.end_minute > 0));
-      if (collision) { setChangeError('This change overlaps another event on that date.'); return; }
-      await db.runAsync('DELETE FROM schedule_exceptions WHERE date=? AND entry_id=? AND exception_type IN (?, ?)', exceptionDate, changeEntry.id, 'modified', 'cancelled');
-      await addScheduleException(db, { date: exceptionDate, entry_id: changeEntry.id, exception_type: 'modified', title: changeEntry.title, start_minute: range.start, end_minute: range.end, notes: null });
-      setChangeEntry(null); setError(''); await refreshExceptions();
-    } catch { setChangeError('Could not save this date-specific change.'); }
-  };
-  const restoreWeeklyTime = async (entry: ScheduleEntry) => {
-    const exception = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
-    if (!exception) return;
-    try { await deleteScheduleException(db, exception.id); await refreshExceptions(); setError(''); }
-    catch { setError('Could not restore the weekly event time.'); }
-  };
-  const remove = (entry: ScheduleEntry) => Alert.alert('Delete event?', `Remove “${entry.title}” from your weekly schedule?`, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM schedule_entries WHERE id=?', entry.id); await refresh(); } }]);
-  const visible = entries.filter(e => e.weekday === selectedDay);
-  const dateWeekday = weekdayForDateKey(exceptionDate);
+
+  const remove = (entry: ScheduleEntry) => Alert.alert('Delete event?', `Remove “${entry.title}” from your weekly schedule?`, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Delete', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM schedule_entries WHERE id=?', entry.id); await refresh(); } },
+  ]);
+
+  const visible = entries.filter(entry => entry.weekday === selectedDay);
+  const options = kind === 'class' ? subjects : kind === 'extracurricular' ? activities : [];
+  const optionTypeLabel = kind === 'class' ? 'SUBJECT' : 'EXTRACURRICULAR';
 
   return <SafeAreaView style={styles.safe} edges={['top']}>
-    <View style={styles.header}><View><Text style={styles.title}>Schedule</Text><Text style={styles.subtitle}>Your weekly timetable</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Add schedule event" style={styles.add} onPress={() => openEditor()}><Ionicons name="add" size={22} color={colors.bgPrimary} /></Pressable></View>
-    <View style={styles.divider} />
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.days}>{days.map((d, i) => <Pressable key={d} onPress={() => { setSelectedDay(i); setExceptionDate(nextDateForWeekday(i)); }} style={[styles.day, selectedDay === i && styles.dayActive]}><Text style={[styles.dayText, selectedDay === i && styles.dayTextActive]}>{d}</Text></Pressable>)}</ScrollView>
-    <ScrollView contentContainerStyle={styles.pageList} keyboardShouldPersistTaps="handled">
-      <PixelCard style={styles.datePanel}>
-        <Text style={styles.panelTitle}>One-off changes</Text>
-        <Text style={styles.eventMeta}>Set a holiday, cancel a weekly event, or add an event for one date.</Text>
-        <DateTimeField label="DATE" mode="date" value={dateFromDateKey(exceptionDate)} onChange={date => { const value = localDateKey(date); setExceptionDate(value); const day = weekdayForDateKey(value); if (day !== null) setSelectedDay(day); }} />
-        {dateWeekday !== null ? <Text style={styles.eventMeta}>{fullDays[dateWeekday]}</Text> : <Text style={styles.error}>Enter a real date (YYYY-MM-DD).</Text>}
-        <Field label="ONE-OFF EVENT NAME" value={oneOffTitle} onChangeText={setOneOffTitle} placeholder="e.g. Study group" />
-        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(oneOffStart)} onChange={date => setOneOffStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(oneOffEnd)} onChange={date => setOneOffEnd(timeKeyFromDate(date))}/></View>
-        <View style={styles.actions}><Pressable style={styles.smallAction} onPress={() => void addOneOff()}><Text style={styles.smallActionText}>Add one-off event</Text></Pressable><Pressable style={styles.smallAction} onPress={() => void addHoliday()}><Text style={styles.smallActionText}>Mark holiday</Text></Pressable></View>
-        {exceptions.map(item => <View key={item.id} style={styles.exceptionRow}>
-          <Text style={styles.eventMeta}>{item.exception_type === 'holiday' ? 'Holiday · weekly events hidden' : item.exception_type === 'cancelled' ? `Cancelled · ${entries.find(entry => entry.id === item.entry_id)?.title ?? 'weekly event'}` : `${item.title} · ${showTime(item.start_minute ?? 0)}–${showTime(item.end_minute ?? 0)}${(item.end_minute ?? 0) > 1440 ? ' +1d' : ''}`}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Remove date change" onPress={async () => { await deleteScheduleException(db, item.id); await refreshExceptions(); }}><Ionicons name="close-circle-outline" size={20} color={colors.textDisabled}/></Pressable>
-        </View>)}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </PixelCard>
-      <Text style={styles.panelTitle}>Weekly · {fullDays[selectedDay]}</Text>
-      {visible.length === 0 ? <EmptyState icon="calendar-outline" title="A clear day" subtitle={`No classes or commitments on ${fullDays[selectedDay]}. Add an event to build your weekly rhythm.`} /> : visible.map(entry => {
-        const cancelled = exceptions.some(item => item.exception_type === 'cancelled' && item.entry_id === entry.id);
-        const modification = exceptions.find(item => item.exception_type === 'modified' && item.entry_id === entry.id);
-        const modified = modification !== undefined;
-        const displayStart = modification?.start_minute ?? entry.start_minute;
-        const displayEnd = modification?.end_minute ?? entry.end_minute;
-        return <PixelCard key={entry.id} accentLeft style={styles.event}>
-          <Pressable style={styles.eventPress} onPress={() => openEditor(entry)} onLongPress={() => remove(entry)}>
-            <View style={styles.time}><Text style={styles.timeText}>{showTime(displayStart)}</Text><View style={styles.timeLine} /><Text style={styles.timeText}>{showTime(displayEnd % 1440)}{displayEnd > 1440 ? ' +1d' : ''}</Text></View>
-            <View style={styles.eventInfo}><Text style={styles.eventName}>{entry.title}{modified ? ' · changed' : ''}</Text><Text style={styles.eventMeta}>{[entry.subject, entry.location, entry.event_type].filter(Boolean).join(' · ')}</Text></View><Ionicons name="create-outline" size={18} color={colors.textDisabled} />
-          </Pressable>
-          {dateWeekday === selectedDay ? <View style={styles.actions}>
-            {cancelled ? <Text style={styles.cancelEventText}>Cancelled for date</Text> : <Pressable style={styles.cancelEvent} onPress={() => void cancelForDate(entry)}><Text style={styles.cancelEventText}>{`Cancel on ${exceptionDate}`}</Text></Pressable>}
-            {!cancelled ? <Pressable style={styles.cancelEvent} onPress={() => openDateChange(entry)}><Text style={styles.smallActionText}>{modified ? 'Edit date change' : 'Change for this date'}</Text></Pressable> : null}
-            {modified ? <Pressable style={styles.cancelEvent} onPress={() => void restoreWeeklyTime(entry)}><Text style={styles.smallActionText}>Restore weekly time</Text></Pressable> : null}
-          </View> : null}
-        </PixelCard>;
-      })}
-      <Text style={styles.hint}>Tap an event to edit · press and hold to delete</Text>
+    <View style={styles.header}><View><Text style={styles.kicker}>WEEKLY ROUTINE</Text><Text style={styles.title}>Schedule</Text><Text style={styles.subtitle}>Classes, activities & commitments</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Add schedule event" style={styles.add} onPress={() => openEditor()}><Ionicons name="add" size={22} color="#0f172a" /></Pressable></View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.days}>{days.map((day, index) => <Pressable key={day} accessibilityRole="tab" accessibilityState={{ selected: selectedDay === index }} onPress={() => setSelectedDay(index)} style={[styles.day, selectedDay === index && styles.dayActive]}><Text style={[styles.dayText, selectedDay === index && styles.dayTextActive]}>{day}</Text></Pressable>)}</ScrollView>
+    <ScrollView contentContainerStyle={styles.pageList} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <View style={styles.weekHeading}><Text style={styles.panelTitle}>{fullDays[selectedDay]}</Text><Text style={styles.eventMeta}>{visible.length} event{visible.length === 1 ? '' : 's'}</Text></View>
+      {error && !modal ? <Text style={styles.error}>{error}</Text> : null}
+      {visible.length === 0 ? <EmptyState icon="calendar-outline" title="A clear day" subtitle={`No classes or commitments on ${fullDays[selectedDay]}. Add an event to build your weekly rhythm.`} /> : visible.map(entry => <PixelCard key={entry.id} accentLeft={entry.event_type === 'extracurricular' ? colors.warning : true} style={styles.event}>
+        <Pressable style={styles.eventPress} onPress={() => openEditor(entry)} onLongPress={() => remove(entry)}>
+          <View style={styles.time}><Text style={styles.timeText}>{showTime(entry.start_minute)}</Text><View style={styles.timeLine}/><Text style={styles.timeText}>{showTime(entry.end_minute)}{entry.end_minute > 1440 ? ' +1d' : ''}</Text></View>
+          <View style={styles.eventInfo}><Text style={styles.eventName}>{entry.title}</Text><Text style={styles.eventMeta}>{[entry.subject, entry.location, entry.event_type === 'class' ? 'Class' : entry.event_type === 'extracurricular' ? 'Extracurricular' : 'Personal'].filter(Boolean).join(' · ')}</Text></View>
+          <Ionicons name="create-outline" size={18} color={colors.textDisabled}/>
+        </Pressable>
+      </PixelCard>)}
+      {visible.length ? <Text style={styles.hint}>Tap an event to edit · press and hold to delete</Text> : null}
     </ScrollView>
-    <Modal visible={modal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModal(false)}><SafeAreaView style={styles.modal}>
-      <View style={styles.modalHeader}><Text style={styles.modalTitle}>{editId ? 'Edit Event' : 'Add Event'}</Text><Pressable onPress={() => setModal(false)}><Text style={styles.cancel}>Cancel</Text></Pressable></View>
-      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-        <Field label="EVENT NAME *" value={title} onChangeText={setTitle} placeholder="e.g. Physics lecture" />
-        <Field label="SUBJECT / TYPE" value={subject} onChangeText={setSubject} placeholder="e.g. Physics, gym, sleep" />
-        <Field label="LOCATION" value={location} onChangeText={setLocation} placeholder="e.g. Lab 2" />
-        <Text style={styles.label}>REPEATS ON</Text><View style={styles.days}>{days.map((d, i) => <Pressable key={d} onPress={() => setWeekday(i)} style={[styles.day, weekday === i && styles.dayActive]}><Text style={[styles.dayText, weekday === i && styles.dayTextActive]}>{d}</Text></Pressable>)}</View>
-        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(start)} onChange={date => setStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(end)} onChange={date => setEnd(timeKeyFromDate(date))}/></View>
-        <Text style={styles.label}>EVENT KIND</Text><View style={styles.days}>{(['class', 'commitment'] as EventType[]).map(k => <Pressable key={k} onPress={() => setKind(k)} style={[styles.kind, kind === k && styles.dayActive]}><Text style={[styles.dayText, kind === k && styles.dayTextActive]}>{k === 'class' ? 'Class / lab' : 'Personal commitment'}</Text></Pressable>)}</View>
-        {error ? <Text style={styles.error}>{error}</Text> : null}<Pressable style={styles.save} onPress={() => void save()}><Text style={styles.saveText}>{editId ? 'Save Changes' : 'Add to Schedule'}</Text></Pressable>
-      </ScrollView>
-    </SafeAreaView></Modal>
-    <Modal visible={changeEntry !== null} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setChangeEntry(null)}><SafeAreaView style={styles.modal}>
-      <View style={styles.modalHeader}><Text style={styles.modalTitle}>Change for {exceptionDate}</Text><Pressable onPress={() => setChangeEntry(null)}><Text style={styles.cancel}>Cancel</Text></Pressable></View>
-      <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
-        <Text style={styles.eventMeta}>{changeEntry?.title} · only this occurrence changes</Text>
-        <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(changeStart)} onChange={date => setChangeStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(changeEnd)} onChange={date => setChangeEnd(timeKeyFromDate(date))}/></View>
-        {changeError ? <Text style={styles.error}>{changeError}</Text> : null}<Pressable style={styles.save} onPress={() => void saveDateChange()}><Text style={styles.saveText}>Save for this date</Text></Pressable>
-      </ScrollView>
-    </SafeAreaView></Modal>
+
+    <Modal visible={modal} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModal(false)}>
+      <SafeAreaView style={styles.modal} edges={['top', 'bottom']}>
+        <View style={styles.modalHeader}><Text style={styles.modalTitle}>{editId ? 'Edit Event' : 'Add Event'}</Text><Pressable accessibilityRole="button" onPress={() => setModal(false)}><Text style={styles.cancel}>Cancel</Text></Pressable></View>
+        <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+          <Field label="EVENT NAME *" value={title} onChangeText={setTitle} placeholder={kind === 'class' ? 'e.g. Physics lecture' : kind === 'extracurricular' ? 'e.g. Basketball practice' : 'e.g. Personal commitment'} />
+          <Text style={styles.label}>EVENT KIND</Text><View style={styles.kindChoices}>{(['class', 'extracurricular', 'commitment'] as EventType[]).map(value => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: kind === value }} onPress={() => { setKind(value); setSubject(''); }} style={[styles.kind, kind === value && styles.dayActive]}><Text style={[styles.dayText, kind === value && styles.dayTextActive]}>{value === 'class' ? 'Class' : value === 'extracurricular' ? 'Activity' : 'Personal'}</Text></Pressable>)}</View>
+          {kind === 'commitment' ? <Field label="TYPE (OPTIONAL)" value={subject} onChangeText={setSubject} placeholder="e.g. Gym, sleep, chores" /> : <View style={styles.subjectField}>
+            <Text style={styles.label}>{optionTypeLabel}</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.optionChoices}>
+              <Option label="None" selected={!subject} onPress={() => setSubject('')}/>
+              {subject && !options.some(option => option.name === subject) ? <Option label={subject} selected onPress={() => setSubject(subject)}/> : null}
+              {options.map(option => <Option key={option.id} label={option.name} selected={subject === option.name} onPress={() => setSubject(option.name)}/>)}
+            </ScrollView>
+            {options.length === 0 ? <Text style={styles.optionHint}>Add {kind === 'class' ? 'subjects' : 'extracurriculars'} in Profile first.</Text> : null}
+          </View>}
+          <Field label="LOCATION (OPTIONAL)" value={location} onChangeText={setLocation} placeholder="e.g. Lab 2" />
+          <Text style={styles.label}>REPEATS ON</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.repeatDays}>{days.map((day, index) => <Pressable key={day} accessibilityRole="radio" accessibilityState={{ selected: weekday === index }} onPress={() => setWeekday(index)} style={[styles.day, weekday === index && styles.dayActive]}><Text style={[styles.dayText, weekday === index && styles.dayTextActive]}>{day}</Text></Pressable>)}</ScrollView>
+          <View style={styles.row}><DateTimeField style={styles.field} label="START" mode="time" value={dateFromTimeKey(start)} onChange={date => setStart(timeKeyFromDate(date))}/><DateTimeField style={styles.field} label="END" mode="time" value={dateFromTimeKey(end)} onChange={date => setEnd(timeKeyFromDate(date))}/></View>
+          {error ? <Text style={styles.error}>{error}</Text> : null}<Pressable style={styles.save} onPress={() => void save()}><Text style={styles.saveText}>{editId ? 'Save Changes' : 'Add to Schedule'}</Text></Pressable>
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   </SafeAreaView>;
 }
 
-function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.textDisabled} style={styles.input} /></View>; }
+function Field(props: React.ComponentProps<typeof TextInput> & { label: string }) { const { label, ...rest } = props; return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput {...rest} placeholderTextColor={colors.textDisabled} style={styles.input}/></View>; }
+function Option({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) { return <Pressable accessibilityRole="radio" accessibilityState={{ selected }} onPress={onPress} style={[styles.option, selected && styles.optionSelected]}><Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text></Pressable>; }
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bgPrimary }, pageList: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, gap: spacing.sm }, datePanel: { gap: spacing.sm }, panelTitle: { color: colors.textPrimary, fontSize: typography.size.md, fontWeight: '700' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }, smallAction: { borderWidth: borders.thin, borderColor: colors.borderAccent, borderRadius: radii.xs, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, smallActionText: { color: colors.accentSecondary, fontSize: typography.size.xs, fontWeight: '700' }, exceptionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, borderTopWidth: borders.thin, borderTopColor: colors.borderDefault, paddingTop: spacing.xs }, eventPress: { flexDirection: 'row', alignItems: 'center', gap: spacing.md }, cancelEvent: { alignSelf: 'flex-start', marginLeft: 50, paddingVertical: spacing.xs }, cancelEventText: { color: colors.warning, fontSize: typography.size.xs, fontWeight: '700' }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.sm }, title: { color: colors.textPrimary, fontSize: typography.size.xxl, fontWeight: '700' }, subtitle: { color: colors.textMuted, fontSize: typography.size.sm, marginTop: spacing.xxs }, add: { width: 42, height: 42, backgroundColor: colors.accentPrimary, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' }, divider: { height: 1, backgroundColor: colors.borderDefault, marginHorizontal: spacing.md }, days: { flexDirection: 'row', gap: spacing.xs, padding: spacing.md }, day: { borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, dayActive: { borderColor: colors.borderAccent, backgroundColor: colors.bgHighlight }, dayText: { color: colors.textMuted, fontSize: typography.size.sm, textTransform: 'capitalize' }, dayTextActive: { color: colors.accentSecondary, fontWeight: '700' }, empty: { flex: 1, justifyContent: 'center' }, event: { gap: spacing.sm }, time: { alignItems: 'center' }, timeText: { color: colors.accentSecondary, fontSize: typography.size.xs, fontWeight: '700' }, timeLine: { height: 12, width: 1, backgroundColor: colors.borderAccent, marginVertical: 2 }, eventInfo: { flex: 1, gap: 4 }, eventName: { color: colors.textPrimary, fontSize: typography.size.md, fontWeight: '700' }, eventMeta: { color: colors.textMuted, fontSize: typography.size.xs, textTransform: 'capitalize' }, hint: { color: colors.textDisabled, fontSize: typography.size.xs, textAlign: 'center', padding: spacing.sm }, modal: { flex: 1, backgroundColor: colors.bgPrimary }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault }, modalTitle: { color: colors.textPrimary, fontSize: typography.size.xl, fontWeight: '700' }, cancel: { color: colors.accentPrimary }, form: { padding: spacing.md, gap: spacing.md }, field: { flex: 1, gap: spacing.xs }, label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '700', letterSpacing: 1 }, input: { minHeight: 44, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, color: colors.textPrimary, paddingHorizontal: spacing.sm }, row: { flexDirection: 'row', gap: spacing.sm }, kind: { borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, error: { color: colors.dangerLight }, save: { backgroundColor: colors.accentPrimary, borderRadius: radii.sm, padding: spacing.md, alignItems: 'center' }, saveText: { color: colors.bgPrimary, fontWeight: '700' },
+  safe: { flex: 1, backgroundColor: colors.bgPrimary },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.md, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  kicker: { color: colors.warning, fontSize: typography.size.xs, fontWeight: '800', letterSpacing: 1.4 },
+  title: { color: colors.textPrimary, fontSize: typography.size.xxl, fontWeight: '800', marginTop: 2 },
+  subtitle: { color: colors.textMuted, fontSize: typography.size.sm, marginTop: spacing.xxs },
+  add: { width: 44, height: 44, backgroundColor: colors.accentPrimary, borderWidth: borders.thin, borderColor: colors.accentPrimary, borderBottomWidth: 4, borderBottomColor: '#0284c7', borderRadius: radii.xs, alignItems: 'center', justifyContent: 'center' },
+  days: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  day: { borderWidth: borders.thin, borderColor: colors.borderDefault, borderBottomWidth: 3, borderBottomColor: '#0d0d19', borderRadius: radii.xs, backgroundColor: colors.bgCard, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, alignItems: 'center', justifyContent: 'center' },
+  dayActive: { borderColor: colors.accentPrimary, backgroundColor: colors.accentPrimary, borderBottomColor: '#0284c7' },
+  dayText: { color: colors.textMuted, fontSize: typography.size.sm, fontWeight: '700', textTransform: 'capitalize' },
+  dayTextActive: { color: '#0f172a', fontWeight: '800' },
+  pageList: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.sm },
+  weekHeading: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: spacing.sm, marginBottom: spacing.xs },
+  panelTitle: { color: colors.textPrimary, fontSize: typography.size.lg, fontWeight: '800' },
+  event: { gap: spacing.sm },
+  eventPress: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  time: { alignItems: 'center', minWidth: 52 },
+  timeText: { color: colors.accentSecondary, fontSize: typography.size.xs, fontWeight: '800' },
+  timeLine: { height: 10, width: 2, backgroundColor: colors.accentPrimary, marginVertical: 3 },
+  eventInfo: { flex: 1, gap: 4 },
+  eventName: { color: colors.textPrimary, fontSize: typography.size.md, fontWeight: '800' },
+  eventMeta: { color: colors.textMuted, fontSize: typography.size.xs, textTransform: 'capitalize' },
+  hint: { color: colors.textDisabled, fontSize: typography.size.xs, textAlign: 'center', padding: spacing.sm },
+  modal: { flex: 1, backgroundColor: colors.bgPrimary },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault },
+  modalTitle: { color: colors.textPrimary, fontSize: typography.size.xl, fontWeight: '800' },
+  cancel: { color: colors.accentPrimary, fontSize: typography.size.md, fontWeight: '700' },
+  form: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.md },
+  field: { flex: 1, gap: spacing.xs },
+  label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '800', letterSpacing: 1 },
+  input: { minHeight: 46, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.xs, backgroundColor: '#14141f', color: colors.textPrimary, paddingHorizontal: spacing.sm },
+  kindChoices: { flexDirection: 'row', gap: spacing.xs },
+  kind: { flex: 1, alignItems: 'center', borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.xs, backgroundColor: colors.bgCard, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
+  subjectField: { gap: spacing.xs },
+  optionChoices: { flexDirection: 'row', gap: spacing.xs, paddingVertical: 2 },
+  option: { borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.xs, backgroundColor: colors.bgCard, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
+  optionSelected: { borderColor: colors.accentPrimary, backgroundColor: '#00354a' },
+  optionText: { color: colors.textMuted, fontSize: typography.size.sm, fontWeight: '600' },
+  optionTextSelected: { color: colors.accentSecondary, fontWeight: '800' },
+  optionHint: { color: colors.textDisabled, fontSize: typography.size.xs },
+  repeatDays: { flexDirection: 'row', gap: spacing.xs },
+  row: { flexDirection: 'row', gap: spacing.sm },
+  error: { color: colors.dangerLight, fontSize: typography.size.sm },
+  save: { backgroundColor: colors.accentPrimary, borderWidth: borders.thin, borderColor: colors.accentPrimary, borderBottomWidth: 4, borderBottomColor: '#0284c7', borderRadius: radii.xs, padding: spacing.md, alignItems: 'center' },
+  saveText: { color: '#0f172a', fontWeight: '800', fontSize: typography.size.md },
 });

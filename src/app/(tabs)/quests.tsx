@@ -12,6 +12,7 @@ import type { Task, TaskCategory, TaskInput, TaskPriority } from '../../features
 import DateTimeField from '../../components/ui/DateTimeField';
 import { classifyDeadline, dateFromDateKey, dateFromTimeKey, isValidDateKey, isValidTimeKey, localDateKey, timeKeyFromDate } from '../../utils/dates';
 import { ensureReminderPermission, syncTaskReminderState } from '../../features/reminders/service';
+import { listProfileOptions, type ProfileOption } from '../../features/profile/options';
 
 const categories: TaskCategory[] = ['assignment', 'lab', 'exam', 'revision', 'project', 'personal'];
 const priorities: TaskPriority[] = ['low', 'medium', 'high'];
@@ -20,6 +21,7 @@ const blankForm: TaskInput = { title: '', description: null, subject: null, cate
 export default function QuestsScreen() {
   const db = useSQLiteContext();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [subjects, setSubjects] = useState<ProfileOption[]>([]);
   const [filter, setFilter] = useState<'open' | 'completed'>('open');
   const [form, setForm] = useState<TaskInput>(blankForm);
   const [editingId, setEditingId] = useState<number | undefined>();
@@ -30,12 +32,14 @@ export default function QuestsScreen() {
   }, [db]);
   useEffect(() => {
     let active = true;
-    listTasks(db).then(rows => { if (active) setTasks(rows); })
+    Promise.all([listTasks(db), listProfileOptions(db, 'subject')]).then(([rows, options]) => { if (active) { setTasks(rows); setSubjects(options); } })
       .catch(() => { if (active) setError('Could not load your quests. Please try again.'); });
     return () => { active = false; };
   }, [db]);
 
-  const openForm = (task?: Task) => {
+  const openForm = async (task?: Task) => {
+    try { setSubjects(await listProfileOptions(db, 'subject')); }
+    catch { setSubjects([]); }
     setEditingId(task?.id);
     setForm(task ? { title: task.title, description: task.description, subject: task.subject, category: task.category,
       due_date: task.due_date, due_time: task.due_time, estimated_minutes: task.estimated_minutes,
@@ -108,7 +112,11 @@ export default function QuestsScreen() {
         <View style={styles.modalHeader}><Text style={styles.modalTitle}>{editingId ? 'Edit Quest' : 'New Quest'}</Text><Pressable onPress={() => setVisible(false)}><Text style={styles.cancel}>Cancel</Text></Pressable></View>
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Field label="TITLE *" value={form.title} onChangeText={title => setForm({ ...form, title })} placeholder="e.g. Chemistry lab record" />
-          <Field label="SUBJECT" value={form.subject ?? ''} onChangeText={subject => setForm({ ...form, subject: subject || null })} placeholder="e.g. Chemistry" />
+          <View style={styles.subjectField}><Text style={styles.label}>SUBJECT</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectChoices}>
+            <Choice label="No subject" selected={!form.subject} onPress={() => setForm({ ...form, subject: null })}/>
+            {form.subject && !subjects.some(option => option.name === form.subject) ? <Choice label={form.subject} selected onPress={() => setForm({ ...form, subject: form.subject })}/> : null}
+            {subjects.map(option => <Choice key={option.id} label={option.name} selected={form.subject === option.name} onPress={() => setForm({ ...form, subject: option.name })}/>)}
+          </ScrollView>{subjects.length === 0 ? <Text style={styles.subjectHint}>Add your subjects in Profile to select them here.</Text> : null}</View>
           <Field label="DESCRIPTION" value={form.description ?? ''} onChangeText={description => setForm({ ...form, description: description || null })} placeholder="What needs to get done?" multiline />
           <Text style={styles.label}>CATEGORY</Text><View style={styles.choices}>{categories.map(c => <Choice key={c} label={c} selected={form.category === c} onPress={() => setForm({ ...form, category: c })} />)}</View>
           <Text style={styles.label}>PRIORITY</Text><View style={styles.choices}>{priorities.map(p => <Choice key={p} label={p} selected={form.priority === p} onPress={() => setForm({ ...form, priority: p })} />)}</View>
@@ -148,5 +156,5 @@ const styles = StyleSheet.create({
   kicker: { color: colors.warning, fontSize: typography.size.xs, fontWeight: '800', letterSpacing: 1.5, marginBottom: spacing.xxs }, title: { color: colors.textPrimary, fontSize: typography.size.xxl, fontWeight: '800' }, subtitle: { color: colors.textMuted, fontSize: typography.size.sm, marginTop: spacing.xxs }, activeCount: { color: colors.success, fontWeight: '700' }, filterRow: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }, filterButton: { flex: 1, backgroundColor: colors.bgCard, borderWidth: borders.thin, borderColor: colors.borderDefault, borderBottomWidth: 4, borderBottomColor: '#0d0d19', borderRadius: radii.md, paddingVertical: spacing.sm, alignItems: 'center' }, filterButtonActive: { backgroundColor: colors.warning, borderColor: colors.warning, borderBottomColor: '#b45309' }, filterText: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '800', letterSpacing: 0.5 }, filterTextActive: { color: '#181824' },
   add: { backgroundColor: colors.accentPrimary, borderRadius: radii.sm, width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }, empty: { flex: 1, justifyContent: 'center' }, list: { padding: spacing.md, gap: spacing.sm, paddingBottom: spacing.xxl }, card: { gap: spacing.sm },
   taskTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, check: { padding: 2 }, taskInfo: { flex: 1, gap: 3 }, taskTitle: { color: colors.textPrimary, fontSize: typography.size.md, fontWeight: '700' }, completed: { color: colors.textMuted, textDecorationLine: 'line-through' }, meta: { color: colors.textMuted, fontSize: typography.size.xs, textTransform: 'capitalize' }, badges: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', marginLeft: 38 }, description: { color: colors.textSecondary, marginLeft: 38, fontSize: typography.size.sm }, error: { color: colors.dangerLight, padding: spacing.md },
-  modal: { flex: 1, backgroundColor: colors.bgPrimary }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault }, modalTitle: { fontSize: typography.size.xl, color: colors.textPrimary, fontWeight: '700' }, cancel: { color: colors.accentPrimary, fontSize: typography.size.md }, form: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }, field: { gap: spacing.xs }, label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '700', letterSpacing: 1 }, input: { minHeight: 44, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, reminderOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, padding: spacing.sm }, reminderDisabled: { opacity: 0.5 }, reminderInfo: { flex: 1, gap: 2 }, reminderTitle: { color: colors.textPrimary, fontSize: typography.size.sm, fontWeight: '700' }, reminderHint: { color: colors.textMuted, fontSize: typography.size.xs }, multiline: { minHeight: 80, textAlignVertical: 'top' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, choice: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.xs, borderWidth: borders.thin, borderColor: colors.borderDefault, backgroundColor: colors.bgCard }, choiceActive: { borderColor: colors.borderAccent, backgroundColor: colors.bgHighlight }, choiceText: { color: colors.textMuted, textTransform: 'capitalize', fontSize: typography.size.sm }, choiceTextActive: { color: colors.accentSecondary }, save: { backgroundColor: colors.accentPrimary, padding: spacing.md, borderRadius: radii.sm, alignItems: 'center' }, saveText: { color: colors.bgPrimary, fontWeight: '700', fontSize: typography.size.md },
+  modal: { flex: 1, backgroundColor: colors.bgPrimary }, modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.md, borderBottomWidth: borders.thin, borderBottomColor: colors.borderDefault }, modalTitle: { fontSize: typography.size.xl, color: colors.textPrimary, fontWeight: '700' }, cancel: { color: colors.accentPrimary, fontSize: typography.size.md }, form: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl }, field: { gap: spacing.xs }, subjectField: { gap: spacing.xs }, subjectChoices: { flexDirection: 'row', gap: spacing.xs, paddingVertical: 2 }, subjectHint: { color: colors.textDisabled, fontSize: typography.size.xs }, label: { color: colors.textMuted, fontSize: typography.size.xs, fontWeight: '700', letterSpacing: 1 }, input: { minHeight: 44, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, color: colors.textPrimary, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm }, reminderOption: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: borders.thin, borderColor: colors.borderDefault, borderRadius: radii.sm, backgroundColor: colors.bgCard, padding: spacing.sm }, reminderDisabled: { opacity: 0.5 }, reminderInfo: { flex: 1, gap: 2 }, reminderTitle: { color: colors.textPrimary, fontSize: typography.size.sm, fontWeight: '700' }, reminderHint: { color: colors.textMuted, fontSize: typography.size.xs }, multiline: { minHeight: 80, textAlignVertical: 'top' }, choices: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs }, choice: { paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radii.xs, borderWidth: borders.thin, borderColor: colors.borderDefault, backgroundColor: colors.bgCard }, choiceActive: { borderColor: colors.borderAccent, backgroundColor: colors.bgHighlight }, choiceText: { color: colors.textMuted, textTransform: 'capitalize', fontSize: typography.size.sm }, choiceTextActive: { color: colors.accentSecondary }, save: { backgroundColor: colors.accentPrimary, padding: spacing.md, borderRadius: radii.sm, alignItems: 'center' }, saveText: { color: colors.bgPrimary, fontWeight: '700', fontSize: typography.size.md },
 });

@@ -6,7 +6,7 @@ export interface ScheduleEntry extends FixedEvent {
   id: number;
   weekday: number;
   notes: string | null;
-  event_type: 'class' | 'commitment';
+  event_type: 'class' | 'commitment' | 'extracurricular';
 }
 
 export interface ScheduleException {
