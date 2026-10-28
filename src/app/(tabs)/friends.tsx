@@ -60,8 +60,8 @@ export default function FriendsScreen() {
     <View style={styles.header}><Text style={styles.title}>Friends</Text><Text style={styles.subtitle}>Study together, at your pace.</Text></View>
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.actions}>
-        <ActionButton icon="qr-code-outline" title="My QR" onPress={() => router.push('/friends-qr' as never)} />
-        <ActionButton icon="scan-outline" title="Scan QR" onPress={() => router.push('/friends-scan' as never)} />
+        <ActionButton icon="qr-code-outline" title="My QR" onPress={() => router.push('/friends-qr')} />
+        <ActionButton icon="scan-outline" title="Scan QR" onPress={() => router.push('/friends-scan')} />
       </View>
       {settings ? <PixelCard style={styles.panel}>
         <Text style={styles.sectionTitle}>YOUR STATUS</Text>

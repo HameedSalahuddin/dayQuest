@@ -13,7 +13,12 @@ function client() {
 
 async function rpc<T>(name: string, args?: Record<string, unknown>): Promise<T> {
   const { data, error } = await client().rpc(name as never, args as never);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === 'PGRST202' || /schema cache|could not find the function/i.test(error.message)) {
+      throw new Error('Friends setup is missing in Supabase. Apply supabase/migrations/202610220001_friends_presence.sql in the project SQL Editor, then reload the app.');
+    }
+    throw new Error(error.message);
+  }
   return data as T;
 }
 
